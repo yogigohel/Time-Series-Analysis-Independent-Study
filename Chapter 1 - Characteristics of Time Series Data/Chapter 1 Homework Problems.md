@@ -11,5 +11,13 @@ autoplot(hw1, facets = FALSE, alpha = 0.75)
 
 ### Problem 1.2
 ---
+##### (a)
+##### (b)
+##### (c)
+
 ### Problem 1.3
 ---
+##### (a)
+##### (b)
+##### (c)
+##### (d)
