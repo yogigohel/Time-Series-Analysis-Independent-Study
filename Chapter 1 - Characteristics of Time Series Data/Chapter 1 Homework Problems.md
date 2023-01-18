@@ -31,6 +31,7 @@ autoplot(as.ts(x_b))
 ```
 ![[HW 1.2 (b).png]]
 ##### (c)
+The explosion series is similar to series a and the earthquake series is similar to series b in their mid to end behavior. We see that both series a and the explosion series have big amplitudes in the middle that slowly become smaller and tend towards 0 but don't get there. We also see that both series b and the earthquake have big amplitudes throughtout their mid to end behaviour.
 ```R
 mod_a=exp(-(1:100)/20)
 mod_b=exp(-(1:100)/200)
