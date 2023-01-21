@@ -11,9 +11,9 @@ autoplot(fmri1[,6:9], facets= FALSE, ylab="BOLD Signal Intensity")
 
 djiR<-diff(log(djia$Close))[-1]
 autoplot(djiR, xlab = "Time", ylab = "Return")
-
+dji<-cbind(djia$close,djiR)
 autoplot(globtempl, xlab = "Year", ylab = "Temp Deviations")
-
+autoplot(dji)
 head(EXP6)
 data.class(EXP6)
 

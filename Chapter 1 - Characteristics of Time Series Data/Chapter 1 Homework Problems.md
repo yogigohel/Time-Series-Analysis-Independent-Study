@@ -7,7 +7,7 @@ hw1<-cbind(EXP6,EQ5)
 colnames(hw1)<-c("Explosion","Volcano")
 autoplot(hw1, facets = FALSE, alpha = 0.75)
 ```
-![[HW 1.1.png]]
+![[HW 1.1.svg]]
 
 ### Problem 1.2
 ---
@@ -21,7 +21,7 @@ s=c(integer(100), 10*exp(-(1:100)/20)*cos(2*pi*1:100/4))
 x_a=s+rnorm(200)
 autoplot(as.ts(x_a))
 ```
-![[HW 1.2 (a).png]]
+![[HW 1.2 (a).svg]]
 
 ##### (b)
 ```R
