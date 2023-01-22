@@ -69,3 +69,14 @@ autoplot(as.ts(cbind(x, v)), main = "Problem 1.3 (c)", facets = F, alpha=0.8)
 ```
 ![[HW 1.3 (c).svg]]
 ##### (d)
+
+### Problem 1.4
+---
+Show the following:
+$$
+\mathbf{E}[(x_{s}-\mu_{s})(x_{t}-\mu_{t})]=\mathbf{E}[x_{s}x_{t}]-\mu_{s}-\mu_{t}
+$$
+Proof:
+> $$\mathbf{E}[(x_{s}-\mu_{s})(x_{t}-\mu_{t})]=\mathbf{E}[x_{s}x_{t}-x_{s}\mu_{t}-x_{t}\mu_{s}+\mu_{s}\mu_{t}]=\mathbf{E}[{x_{s}x_{t}}]-\mu_{t}\mathbf{E}[x_{s}]-\mu_{s}\mathbf{E}[x_{t}]+\mu_{s}\mu_{t}$$
+> $$\mathbf{E}[{x_{s}x_{t}}]-\mu_{t}\mu_{s}-\mu_{s}\mu_{t}+\mu_{s}\mu_{t}=\mathbf{E}[x_{s}x_{t}]-\mu_{s}-\mu_{t}$$
+> $$\implies \mathbf{E}[(x_{s}-\mu_{s})(x_{t}-\mu_{t})]=\mathbf{E}[x_{s}x_{t}]-\mu_{s}-\mu_{t}$$
