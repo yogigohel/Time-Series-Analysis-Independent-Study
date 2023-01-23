@@ -80,3 +80,8 @@ Proof:
 > $$\mathbf{E}[(x_{s}-\mu_{s})(x_{t}-\mu_{t})]=\mathbf{E}[x_{s}x_{t}-x_{s}\mu_{t}-x_{t}\mu_{s}+\mu_{s}\mu_{t}]=\mathbf{E}[{x_{s}x_{t}}]-\mu_{t}\mathbf{E}[x_{s}]-\mu_{s}\mathbf{E}[x_{t}]+\mu_{s}\mu_{t}$$
 > $$\mathbf{E}[{x_{s}x_{t}}]-\mu_{t}\mu_{s}-\mu_{s}\mu_{t}+\mu_{s}\mu_{t}=\mathbf{E}[x_{s}x_{t}]-\mu_{s}\mu_{t}$$
 > $$\implies \mathbf{E}[(x_{s}-\mu_{s})(x_{t}-\mu_{t})]=\mathbf{E}[x_{s}x_{t}]-\mu_{s}\mu_{t}$$
+
+### Problem 1.5
+---
+##### (a) ![[HW 1.5 (a).svg]]
+##### (b) ![[HW 1.5 (b).svg]]
