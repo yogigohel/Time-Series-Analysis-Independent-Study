@@ -84,6 +84,17 @@ Proof:
 ### Problem 1.5
 ---
 ##### (a) 
-![[HW 1.5 (a).svg]]
+```R
+mean_x1 <- c(integer(100), 10*exp(-(1:100)/20)*cos(2*pi*1:100/4))
+x1 <- mean_x1 + rnorm(200)
+autoplot(as.ts(cbind(x1,mean_x1)), main = "Problem 1.5 (a); Modulator t/20", facets = F, alpha=0.7)
+```
+![[HW 1.5 (a)(i).svg]]
+
+```R
+mean_x2 <- c(integer(100), 10*exp(-(1:100)/200)*cos(2*pi*1:100/4))
+x2 <- mean_x2 + rnorm(200)
+autoplot(as.ts(cbind(x2,mean_x2)), main = "Problem 1.5 (a); Modulator t/200", facets = F, alpha=0.7)
+```
+![[HW 1.5 (a)(ii).svg]]
 ##### (b) 
-![[HW 1.5 (b).svg]]
