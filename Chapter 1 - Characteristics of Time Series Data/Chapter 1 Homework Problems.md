@@ -98,3 +98,16 @@ autoplot(as.ts(cbind(x2,mean_x2)), main = "Problem 1.5 (a); Modulator t/200", fa
 ```
 ![[HW 1.5 (a)(ii).svg]]
 ##### (b) 
+
+### Problem 1.6
+---
+##### (a) 
+No, $x_t$ is not stationary because it fails the first requirment, that is $$E[x_t]=E[\beta_1+\beta_2t+w_t]=E[\beta_1]+E[\beta_2t]+E[w_t]=\beta_1+\beta_2t$$ which is dependent on time and that is not allowed in stationary time series.
+##### (b)
+In order to be stationary we need to satisfy two requirements which we show below.
+1.) The mean function is not dependent on time.
+$$E[y_t] = E[x_t - x_{t-1}] = E[x_t] - E[x_{t-1}] = E[\beta_1+\beta_2t + w_t - \beta_1-\beta_2(t-1)-w_{t-1}] = \beta_2$$
+2.)
+##### (c)
+The mean of the moving average is:$$E[v_t]=E[\frac{1}{2q+1}\sum_{j=-q}^{q}x_{t-j}]=\frac{1}{2q+1}(2q+1)E[x_t]=E[x_t]=\beta_1+\beta_2t$$
+The simplified expression for the covariance is:
