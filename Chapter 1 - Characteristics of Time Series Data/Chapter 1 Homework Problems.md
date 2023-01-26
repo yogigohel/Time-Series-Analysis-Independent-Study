@@ -111,3 +111,25 @@ $$E[y_t] = E[x_t - x_{t-1}] = E[x_t] - E[x_{t-1}] = E[\beta_1+\beta_2t + w_t - \
 ##### (c)
 The mean of the moving average is:$$E[v_t]=E[\frac{1}{2q+1}\sum_{j=-q}^{q}x_{t-j}]=\frac{1}{2q+1}(2q+1)E[x_t]=E[x_t]=\beta_1+\beta_2t$$
 The simplified expression for the covariance is:
+
+### Problem 1.8
+---
+##### (a)
+$x_0=0$
+$x_1 = \delta + w_1,$
+$x_2=\delta+(\delta+w_1)+w_2=2\delta+\sum_{k=1}^2w_k$
+$x_3=\delta+(2\delta+\sum_{k=1}^2w_k)+w_2=3\delta+\sum_{k=1}^3w_k$
+... (By Induction)
+$x_{t} = \delta + ((t-1)\delta+\sum_{k=1}^{t-1}w_{k})+w_t = t\delta+\sum_{k=1}^{t}w_{k}$
+
+##### (b)
+$$E[x_t]=E[t\delta+\sum_{k=1}^tw_k]=E[t\delta]+E[\sum_{k=1}^tw_k]=t\delta$$
+$$cov(x_s,x_t)=E[(s\delta+\sum_{k=1}^{s}w_{k}-s\delta)(t\delta+\sum_{k=1}^{t}w_{k}-t\delta)]=E[(\sum_{k=1}^{s}w_{k})(\sum_{k=1}^{t}w_{k})]=0$$(the last equality is from the fact that expectation of two IID random variables multiplied is the product of each of their expectations and when we simplify that we should get a lot of sums of products of $w_k$ terms which all have mean 0)
+## Need to check this -- it doesn't feel correct.
+
+##### (c)
+$x_t$ is not stationary because the mean function is not time homogeneous so it doesn't satisfy the 1st condition of stationarity.
+
+##### (d)
+
+##### (e)
