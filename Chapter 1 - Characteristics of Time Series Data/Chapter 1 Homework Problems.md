@@ -108,7 +108,12 @@ In order to be stationary we need to satisfy two requirements which we show belo
 1.) The mean function is not dependent on time.
 $$E[y_t] = E[x_t - x_{t-1}] = E[x_t] - E[x_{t-1}] = E[\beta_1+\beta_2t + w_t - \beta_1-\beta_2(t-1)-w_{t-1}] = \beta_2$$
 2.)
+##### (a)
+
+##### (b)
+![[Mathematics/Time-Series-Analysis-Independent-Study/Chapter 1 - Characteristics of Time Series Data/Chapter 1 Images/HW 1.6 (b).jpeg]]
 ##### (c)
+![[HW 1.6 (c).jpeg]]
 The mean of the moving average is:$$E[v_t]=E[\frac{1}{2q+1}\sum_{j=-q}^{q}x_{t-j}]=\frac{1}{2q+1}(2q+1)E[x_t]=E[x_t]=\beta_1+\beta_2t$$
 The simplified expression for the covariance is:
 
@@ -129,7 +134,7 @@ $$cov(x_s,x_t)=E[(s\delta+\sum_{k=1}^{s}w_{k}-s\delta)(t\delta+\sum_{k=1}^{t}w_{
 
 ##### (c)
 $x_t$ is not stationary because the mean function is not time homogeneous so it doesn't satisfy the 1st condition of stationarity.
-
+![[HW 1.6 (b) 1.jpeg]]
 ##### (d)
 
 ##### (e)
