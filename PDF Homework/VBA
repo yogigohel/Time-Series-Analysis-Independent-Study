@@ -1,0 +1,119 @@
+Sub OrganizeSegmentData()
+    Dim srcSheet As Worksheet
+    Dim tgtSheet As Worksheet
+    Dim tbl As ListObject
+    Dim valueCell As Range
+    Dim tgtRow As Long
+    Dim referenceCell As Range
+    Dim i As Long
+    Dim headerRange As Range
+    Dim labelRange As Range
+    Dim dataRange As Range
+    
+    ' Initialize source sheet (active sheet)
+    Set srcSheet = ActiveSheet
+    
+    ' Check if there's a table in the source sheet
+    If srcSheet.ListObjects.Count = 0 Then
+        MsgBox "No table found in the active sheet.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Assume the first table in the sheet
+    Set tbl = srcSheet.ListObjects(1)
+    
+    ' Create a new target sheet
+    On Error Resume Next
+    Set tgtSheet = Worksheets("SegmentData")
+    If tgtSheet Is Nothing Then
+        Set tgtSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
+        tgtSheet.Name = "SegmentData"
+    Else
+        ' Clear existing content
+        tgtSheet.Cells.Clear
+    End If
+    On Error GoTo 0
+    
+    ' Set initial target row
+    tgtRow = 1
+    
+    ' Set column widths for better readability
+    With tgtSheet
+        .Columns("A").ColumnWidth = 20
+        .Columns("B").ColumnWidth = 50
+        .Columns("C").ColumnWidth = 30
+    End With
+    
+    ' Loop through each value in the first column of the table
+    For i = 1 To tbl.DataBodyRange.Rows.Count
+        Set valueCell = tbl.DataBodyRange.Cells(i, 1)
+        
+        ' Insert the ticker as a header
+        With tgtSheet.Cells(tgtRow, 1)
+            .Value = valueCell.Value
+            .Font.Size = 14
+            .Font.Bold = True
+            .Font.Color = RGB(0, 112, 192) ' Optional: Add color to headers
+        End With
+        
+        ' Merge cells for the header across columns A to C for better appearance
+        tgtSheet.Range(tgtSheet.Cells(tgtRow, 1), tgtSheet.Cells(tgtRow, 3)).Merge
+        tgtSheet.Range(tgtSheet.Cells(tgtRow, 1), tgtSheet.Cells(tgtRow, 3)).HorizontalAlignment = xlCenter
+        
+        ' Define the reference cell for formulas
+        Set referenceCell = tgtSheet.Cells(tgtRow, 1)
+        
+        ' Insert labels and formulas
+        ' Label for FE_SEGMENT_LABEL
+        With tgtSheet.Cells(tgtRow + 1, 1)
+            .Value = "Segment Label:"
+            .Font.Bold = True
+        End With
+        ' Formula for FE_SEGMENT_LABEL
+        tgtSheet.Cells(tgtRow + 1, 2).Formula = "=FDSR(" & referenceCell.Address(False, False) & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
+        
+        ' Label for FE_SEGMENT_DATA
+        With tgtSheet.Cells(tgtRow + 2, 1)
+            .Value = "Segment Data:"
+            .Font.Bold = True
+        End With
+        ' Formula for FE_SEGMENT_DATA
+        tgtSheet.Cells(tgtRow + 2, 2).Formula = "=FDSR(" & referenceCell.Address(False, False) & ",""FE_SEGMENT_DATA(SALES,LABEL,BUS,+1,,Y,)"")"
+        
+        ' Optional: Add borders around the data for better separation
+        With tgtSheet.Range(tgtSheet.Cells(tgtRow, 1), tgtSheet.Cells(tgtRow + 2, 3))
+            .Borders.LineStyle = xlContinuous
+            .Borders.Weight = xlThin
+            .Borders.Color = RGB(200, 200, 200)
+        End With
+        
+        ' Increment target row by 4 for spacing
+        tgtRow = tgtRow + 4
+    Next i
+    
+    ' Autofit rows for better appearance
+    tgtSheet.Rows.AutoFit
+    
+    ' Add a title at the top of the sheet
+    With tgtSheet.Range("A1")
+        .Value = "Segment Data Overview"
+        .Font.Size = 16
+        .Font.Bold = True
+        .Font.Color = RGB(0, 112, 192)
+        .HorizontalAlignment = xlCenter
+    End With
+    ' Merge the title across columns A to C
+    tgtSheet.Range("A1:C1").Merge
+    tgtSheet.Range("A1:C1").HorizontalAlignment = xlCenter
+    
+    ' Freeze panes to keep the title visible when scrolling
+    tgtSheet.Activate
+    tgtSheet.Range("A5").Select
+    tgtSheet.Application.ActiveWindow.FreezePanes = True
+    
+    ' Apply a consistent font to the entire sheet
+    tgtSheet.Cells.Font.Name = "Calibri"
+    tgtSheet.Cells.Font.Size = 11
+    
+    MsgBox "Segment data has been successfully organized in the 'SegmentData' sheet.", vbInformation
+End Sub
