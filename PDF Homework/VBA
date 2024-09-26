@@ -34,8 +34,20 @@ Sub OrganizeSegmentData()
     End If
     On Error GoTo 0
     
-    ' Set initial target row
-    tgtRow = 1
+    ' Add a title at the top of the sheet
+    With tgtSheet.Range("A1")
+        .Value = "Segment Data Overview"
+        .Font.Size = 16
+        .Font.Bold = True
+        .Font.Color = RGB(0, 112, 192)
+        .HorizontalAlignment = xlCenter
+    End With
+    ' Merge the title across columns A to C
+    tgtSheet.Range("A1:C1").Merge
+    tgtSheet.Range("A1:C1").HorizontalAlignment = xlCenter
+    
+    ' Set initial target row (start from row 3 to leave space below the title)
+    tgtRow = 3
     
     ' Set column widths for better readability
     With tgtSheet
@@ -94,21 +106,10 @@ Sub OrganizeSegmentData()
     ' Autofit rows for better appearance
     tgtSheet.Rows.AutoFit
     
-    ' Add a title at the top of the sheet
-    With tgtSheet.Range("A1")
-        .Value = "Segment Data Overview"
-        .Font.Size = 16
-        .Font.Bold = True
-        .Font.Color = RGB(0, 112, 192)
-        .HorizontalAlignment = xlCenter
-    End With
-    ' Merge the title across columns A to C
-    tgtSheet.Range("A1:C1").Merge
-    tgtSheet.Range("A1:C1").HorizontalAlignment = xlCenter
-    
     ' Freeze panes to keep the title visible when scrolling
+    ' Freeze the first two rows (title and spacing)
     tgtSheet.Activate
-    tgtSheet.Range("A5").Select
+    tgtSheet.Range("A3").Select
     tgtSheet.Application.ActiveWindow.FreezePanes = True
     
     ' Apply a consistent font to the entire sheet
