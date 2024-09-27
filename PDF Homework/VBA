@@ -1,14 +1,25 @@
-Sub OrganizeSegmentData()
+Sub OrganizeSegmentDataOptimized()
     Dim srcSheet As Worksheet
     Dim tgtSheet As Worksheet
     Dim tbl As ListObject
-    Dim valueCell As Range
+    Dim valueArray As Variant
     Dim tgtRow As Long
-    Dim referenceCell As Range
     Dim i As Long
-    Dim headerRange As Range
-    Dim labelRange As Range
-    Dim dataRange As Range
+    Dim lastTicker As Long
+    Dim startTime As Double
+    
+    ' Start timer to measure performance
+    startTime = Timer
+    
+    ' Disable settings to improve performance
+    With Application
+        .ScreenUpdating = False
+        .Calculation = xlCalculationManual
+        .EnableEvents = False
+        .DisplayStatusBar = False
+    End With
+    
+    On Error GoTo Cleanup ' Ensure settings are restored even if an error occurs
     
     ' Initialize source sheet (active sheet)
     Set srcSheet = ActiveSheet
@@ -16,26 +27,28 @@ Sub OrganizeSegmentData()
     ' Check if there's a table in the source sheet
     If srcSheet.ListObjects.Count = 0 Then
         MsgBox "No table found in the active sheet.", vbExclamation
-        Exit Sub
+        GoTo Cleanup
     End If
     
     ' Assume the first table in the sheet
     Set tbl = srcSheet.ListObjects(1)
     
-    ' Create a new target sheet
+    ' Read all values from the first column into an array
+    valueArray = tbl.ListColumns(1).DataBodyRange.Value
+    
+    ' Create or clear the target sheet
     On Error Resume Next
     Set tgtSheet = Worksheets("SegmentData")
     If tgtSheet Is Nothing Then
         Set tgtSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
         tgtSheet.Name = "SegmentData"
     Else
-        ' Clear existing content
         tgtSheet.Cells.Clear
     End If
-    On Error GoTo 0
+    On Error GoTo Cleanup
     
     ' Add a title at the top of the sheet
-    With tgtSheet.Range("A1")
+    With tgtSheet.Range("A1:C1")
         .Value = "Segment Data Overview"
         .Font.Size = 16
         .Font.Bold = True
@@ -44,10 +57,6 @@ Sub OrganizeSegmentData()
     End With
     ' Merge the title across columns A to C
     tgtSheet.Range("A1:C1").Merge
-    tgtSheet.Range("A1:C1").HorizontalAlignment = xlCenter
-    
-    ' Set initial target row (start from row 3 to leave space below the title)
-    tgtRow = 3
     
     ' Set column widths for better readability
     With tgtSheet
@@ -56,65 +65,96 @@ Sub OrganizeSegmentData()
         .Columns("C").ColumnWidth = 30
     End With
     
-    ' Loop through each value in the first column of the table
-    For i = 1 To tbl.DataBodyRange.Rows.Count
-        Set valueCell = tbl.DataBodyRange.Cells(i, 1)
+    ' Initialize target row (start from row 3 to leave space below the title)
+    tgtRow = 3
+    
+    ' Prepare arrays to hold data and formatting
+    Dim headers() As Variant
+    Dim labels() As Variant
+    Dim formulasLabel() As Variant
+    Dim formulasData() As Variant
+    ReDim headers(1 To UBound(valueArray, 1), 1 To 1)
+    ReDim labels(1 To UBound(valueArray, 1), 1 To 1)
+    ReDim formulasLabel(1 To UBound(valueArray, 1), 1 To 1)
+    ReDim formulasData(1 To UBound(valueArray, 1), 1 To 1)
+    
+    ' Populate arrays with data
+    For i = 1 To UBound(valueArray, 1)
+        headers(i, 1) = valueArray(i, 1)
+        labels(i, 1) = "Segment Label:"
+        formulasLabel(i, 1) = "=FDSR(A" & (tgtRow + (i - 1) * 4) & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
+        labels(i, 1) = "Segment Label:"
+        formulasData(i, 1) = "=FDSR(A" & (tgtRow + (i - 1) * 4) & ",""FE_SEGMENT_DATA(SALES,LABEL,BUS,+1,,Y,)"")"
+    Next i
+    
+    ' Write headers in bulk
+    Dim headerRange As Range
+    Set headerRange = tgtSheet.Range("A3:A" & (3 + UBound(headers, 1) * 4 - 1))
+    
+    ' Instead of writing headers one by one, we'll loop through and write each block
+    For i = 1 To UBound(headers, 1)
+        Dim currentRow As Long
+        currentRow = tgtRow + (i - 1) * 4
         
-        ' Insert the ticker as a header
-        With tgtSheet.Cells(tgtRow, 1)
-            .Value = valueCell.Value
+        ' Write the header
+        With tgtSheet.Cells(currentRow, 1)
+            .Value = headers(i, 1)
             .Font.Size = 14
             .Font.Bold = True
-            .Font.Color = RGB(0, 112, 192) ' Optional: Add color to headers
+            .Font.Color = RGB(0, 112, 192)
         End With
         
-        ' Merge cells for the header across columns A to C for better appearance
-        tgtSheet.Range(tgtSheet.Cells(tgtRow, 1), tgtSheet.Cells(tgtRow, 3)).Merge
-        tgtSheet.Range(tgtSheet.Cells(tgtRow, 1), tgtSheet.Cells(tgtRow, 3)).HorizontalAlignment = xlCenter
-        
-        ' Define the reference cell for formulas
-        Set referenceCell = tgtSheet.Cells(tgtRow, 1)
+        ' Merge cells for the header across columns A to C
+        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).Merge
+        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).HorizontalAlignment = xlCenter
         
         ' Insert labels and formulas
-        ' Label for FE_SEGMENT_LABEL
-        With tgtSheet.Cells(tgtRow + 1, 1)
+        With tgtSheet.Cells(currentRow + 1, 1)
             .Value = "Segment Label:"
             .Font.Bold = True
         End With
-        ' Formula for FE_SEGMENT_LABEL
-        tgtSheet.Cells(tgtRow + 1, 2).Formula = "=FDSR(" & referenceCell.Address(False, False) & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
+        tgtSheet.Cells(currentRow + 1, 2).Formula = "=FDSR(A" & currentRow & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
         
-        ' Label for FE_SEGMENT_DATA
-        With tgtSheet.Cells(tgtRow + 2, 1)
+        With tgtSheet.Cells(currentRow + 2, 1)
             .Value = "Segment Data:"
             .Font.Bold = True
         End With
-        ' Formula for FE_SEGMENT_DATA
-        tgtSheet.Cells(tgtRow + 2, 2).Formula = "=FDSR(" & referenceCell.Address(False, False) & ",""FE_SEGMENT_DATA(SALES,LABEL,BUS,+1,,Y,)"")"
+        tgtSheet.Cells(currentRow + 2, 2).Formula = "=FDSR(A" & currentRow & ",""FE_SEGMENT_DATA(SALES,LABEL,BUS,+1,,Y,)"")"
         
-        ' Optional: Add borders around the data for better separation
-        With tgtSheet.Range(tgtSheet.Cells(tgtRow, 1), tgtSheet.Cells(tgtRow + 2, 3))
+        ' Add borders around the data block
+        With tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow + 2, 3))
             .Borders.LineStyle = xlContinuous
             .Borders.Weight = xlThin
             .Borders.Color = RGB(200, 200, 200)
         End With
-        
-        ' Increment target row by 4 for spacing
-        tgtRow = tgtRow + 4
     Next i
     
     ' Autofit rows for better appearance
     tgtSheet.Rows.AutoFit
     
     ' Freeze panes to keep the title visible when scrolling
-    ' Freeze the first two rows (title and spacing)
     tgtSheet.Activate
     tgtSheet.Range("A3").Select
     tgtSheet.Application.ActiveWindow.FreezePanes = True
     
     ' Apply a consistent font to the entire sheet
-    tgtSheet.Cells.Font.Name = "Calibri"
-    tgtSheet.Cells.Font.Size = 11
+    With tgtSheet.Cells
+        .Font.Name = "Calibri"
+        .Font.Size = 11
+    End With
     
-    MsgBox "Segment data has been successfully organized in the 'SegmentData' sheet.", vbInformation
+    ' Restore settings
+Cleanup:
+    With Application
+        .ScreenUpdating = True
+        .Calculation = xlCalculationAutomatic
+        .EnableEvents = True
+        .DisplayStatusBar = True
+    End With
+    
+    ' Calculate and display elapsed time
+    Dim elapsedTime As Double
+    elapsedTime = Timer - startTime
+    MsgBox "Segment data has been successfully organized in the 'SegmentData' sheet." & vbCrLf & _
+           "Elapsed Time: " & Format(elapsedTime, "0.00") & " seconds.", vbInformation
 End Sub
