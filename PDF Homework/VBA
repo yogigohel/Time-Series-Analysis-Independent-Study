@@ -14,10 +14,8 @@ Sub GenerateSegmentPieCharts()
     Dim chartTop As Double
     Dim chartWidth As Double
     Dim chartHeight As Double
-    Dim dataRange As Range
     Dim tempSheet As Worksheet
-    Dim labelsRange As Range
-    Dim valuesRange As Range
+    Dim dataRange As Range
     Dim cleanupRequired As Boolean
     
     ' Start timer to measure performance
@@ -58,7 +56,7 @@ Sub GenerateSegmentPieCharts()
     ' Initialize starting row
     currentRow = 3 ' Assuming data starts from row 3
     
-    ' Determine the last row with data
+    ' Determine the last row with data in column A
     lastRow = srcSheet.Cells(srcSheet.Rows.Count, "A").End(xlUp).Row
     
     ' Loop through each ticker
@@ -89,8 +87,16 @@ Sub GenerateSegmentPieCharts()
         End If
         
         ' Create a temporary sheet to hold the labels and data for charting
-        Set tempSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
-        tempSheet.Name = "TempChartData"
+        ' Instead of creating multiple sheets, we'll use a single temporary sheet
+        On Error Resume Next
+        Set tempSheet = Worksheets("TempChartData")
+        If tempSheet Is Nothing Then
+            Set tempSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
+            tempSheet.Name = "TempChartData"
+        Else
+            tempSheet.Cells.Clear
+        End If
+        On Error GoTo CleanupAndExit
         
         ' Populate the temporary sheet with labels and data
         For i = 0 To UBound(labelArray)
@@ -98,23 +104,30 @@ Sub GenerateSegmentPieCharts()
             tempSheet.Cells(i + 1, 2).Value = Val(Trim(dataArray(i)))
         Next i
         
-        ' Define the range for labels and data
-        Set labelsRange = tempSheet.Range("A1:A" & UBound(labelArray) + 1)
-        Set valuesRange = tempSheet.Range("B1:B" & UBound(dataArray) + 1)
+        ' Define the range for data (labels and values)
+        Set dataRange = tempSheet.Range("A1:B" & UBound(dataArray) + 1)
         
         ' Add the pie chart to the target sheet
-        Set chartObj = tgtSheet.ChartObjects.Add(Left:=50, Top:=100 + ((currentRow - 3) / 4) * 300, Width:=400, Height:=300)
+        ' Position charts with spacing (e.g., 400 points height)
+        chartLeft = 50 + ((currentRow - 3) Mod 2) * 450 ' Adjust for two columns of charts
+        chartTop = 50 + Int((currentRow - 3) / 2) * 350
+        chartWidth = 400
+        chartHeight = 300
+        
+        Set chartObj = tgtSheet.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
         With chartObj.Chart
             .ChartType = xlPie
-            .SetSourceData Source:=Union(labelsRange, valuesRange)
+            .SetSourceData Source:=dataRange
             .HasTitle = True
             .ChartTitle.Text = tickerName & " Segment Distribution"
             
             ' Configure data labels to show percentages
             .ApplyDataLabels Type:=xlDataLabelsShowPercent, LegendKey:=False
-            .DataLabels.ShowPercentage = True
-            .DataLabels.ShowValue = False
-            .DataLabels.ShowCategoryName = False
+            With .DataLabels
+                .ShowPercentage = True
+                .ShowValue = False
+                .ShowCategoryName = False
+            End With
             
             ' Enhance chart aesthetics
             .PlotArea.Format.Fill.Visible = msoFalse ' Remove plot area fill
