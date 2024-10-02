@@ -1,173 +1,109 @@
-Sub GenerateSegmentPieCharts()
-    Dim srcSheet As Worksheet
-    Dim tgtSheet As Worksheet
+Sub CreateRevenuePieCharts()
+    ' Declare variables
+    Dim wsData As Worksheet
+    Dim wsCharts As Worksheet
     Dim lastRow As Long
     Dim currentRow As Long
-    Dim tickerName As String
-    Dim segmentLabels As String
-    Dim segmentData As String
-    Dim labelArray() As String
-    Dim dataArray() As String
-    Dim i As Long
+    Dim ticker As String
+    Dim labelsRange As Range
+    Dim dataRange As Range
     Dim chartObj As ChartObject
     Dim chartLeft As Double
     Dim chartTop As Double
     Dim chartWidth As Double
     Dim chartHeight As Double
-    Dim tempSheet As Worksheet
-    Dim dataRange As Range
-    Dim cleanupRequired As Boolean
+    Dim chartCount As Integer
+    Dim lastCol As Long
+    Dim i As Integer
     
-    ' Start timer to measure performance
-    Dim startTime As Double
-    startTime = Timer
-    
-    ' Disable settings to improve performance
-    With Application
-        .ScreenUpdating = False
-        .Calculation = xlCalculationManual
-        .EnableEvents = False
-        .DisplayStatusBar = False
-    End With
-    cleanupRequired = True
-    
-    On Error GoTo CleanupAndExit ' Ensure settings are restored even if an error occurs
-    
-    ' Initialize source sheet
-    Set srcSheet = Worksheets("SegmentData")
-    
-    ' Check if source sheet exists
-    If srcSheet Is Nothing Then
-        MsgBox "The 'SegmentData' sheet does not exist. Please run the 'OrganizeSegmentData' macro first.", vbCritical
+    ' Set the data worksheet
+    On Error Resume Next
+    Set wsData = ThisWorkbook.Sheets("SegmentData")
+    If wsData Is Nothing Then
+        MsgBox "Sheet 'SegmentData' not found!", vbCritical
         Exit Sub
     End If
+    On Error GoTo 0
     
-    ' Create or clear the target sheet for charts
+    ' Create or clear the PieCharts worksheet
     On Error Resume Next
-    Set tgtSheet = Worksheets("SegmentPieCharts")
-    If tgtSheet Is Nothing Then
-        Set tgtSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
-        tgtSheet.Name = "SegmentPieCharts"
+    Set wsCharts = ThisWorkbook.Sheets("PieCharts")
+    If wsCharts Is Nothing Then
+        Set wsCharts = ThisWorkbook.Sheets.Add(After:=wsData)
+        wsCharts.Name = "PieCharts"
     Else
-        tgtSheet.Cells.Clear
+        wsCharts.Cells.Clear
     End If
-    On Error GoTo CleanupAndExit
+    On Error GoTo 0
     
-    ' Initialize starting row
-    currentRow = 3 ' Assuming data starts from row 3
+    ' Determine the last row with data in SegmentData
+    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
     
-    ' Determine the last row with data in column A
-    lastRow = srcSheet.Cells(srcSheet.Rows.Count, "A").End(xlUp).Row
+    ' Initialize chart positioning variables
+    chartLeft = 10      ' Starting from 10 points from the left
+    chartTop = 10       ' Starting from 10 points from the top
+    chartWidth = 400    ' Width of each chart
+    chartHeight = 300   ' Height of each chart
+    chartCount = 0      ' Counter to manage chart placement
     
-    ' Loop through each ticker
-    Do While currentRow <= lastRow
-        ' Read the ticker name
-        tickerName = srcSheet.Cells(currentRow, 1).Value
+    ' Loop through the data every 4 rows starting from row 3
+    For currentRow = 3 To lastRow Step 4
+        ' Get the ticker symbol from the current row, first column (A)
+        ticker = Trim(wsData.Cells(currentRow, 1).Value)
         
-        ' Read segment labels and data
-        segmentLabels = srcSheet.Cells(currentRow + 1, 2).Value
-        segmentData = srcSheet.Cells(currentRow + 2, 2).Value
+        ' If ticker is empty, assume no more companies and exit loop
+        If ticker = "" Then Exit For
         
-        ' Check if both labels and data are present
-        If Trim(segmentLabels) = "" Or Trim(segmentData) = "" Then
-            ' Skip if either labels or data is missing
-            currentRow = currentRow + 4
-            GoTo NextTicker
-        End If
+        ' Determine the last column with data for labels and values
+        lastCol = wsData.Cells(currentRow + 1, wsData.Columns.Count).End(xlToLeft).Column
+        If lastCol < 1 Then GoTo NextCompany
         
-        ' Split the labels and data into arrays
-        labelArray = Split(segmentLabels, ",")
-        dataArray = Split(segmentData, ",")
+        ' Set the range for segment labels (Row currentRow + 1)
+        Set labelsRange = wsData.Range(wsData.Cells(currentRow + 1, 1), wsData.Cells(currentRow + 1, lastCol))
         
-        ' Ensure that labels and data counts match
-        If UBound(labelArray) <> UBound(dataArray) Then
-            MsgBox "Mismatch between number of labels and data for ticker '" & tickerName & "'. Skipping this ticker.", vbExclamation
-            currentRow = currentRow + 4
-            GoTo NextTicker
-        End If
+        ' Set the range for segment data (Row currentRow + 2)
+        Set dataRange = wsData.Range(wsData.Cells(currentRow + 2, 1), wsData.Cells(currentRow + 2, lastCol))
         
-        ' Create a temporary sheet to hold the labels and data for charting
-        ' Instead of creating multiple sheets, we'll use a single temporary sheet
-        On Error Resume Next
-        Set tempSheet = Worksheets("TempChartData")
-        If tempSheet Is Nothing Then
-            Set tempSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
-            tempSheet.Name = "TempChartData"
-        Else
-            tempSheet.Cells.Clear
-        End If
-        On Error GoTo CleanupAndExit
+        ' Add a new chart to the PieCharts sheet
+        Set chartObj = wsCharts.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
         
-        ' Populate the temporary sheet with labels and data
-        For i = 0 To UBound(labelArray)
-            tempSheet.Cells(i + 1, 1).Value = Trim(labelArray(i))
-            tempSheet.Cells(i + 1, 2).Value = Val(Trim(dataArray(i)))
-        Next i
-        
-        ' Define the range for data (labels and values)
-        Set dataRange = tempSheet.Range("A1:B" & UBound(dataArray) + 1)
-        
-        ' Add the pie chart to the target sheet
-        ' Position charts with spacing (e.g., 400 points height)
-        chartLeft = 50 + ((currentRow - 3) Mod 2) * 450 ' Adjust for two columns of charts
-        chartTop = 50 + Int((currentRow - 3) / 2) * 350
-        chartWidth = 400
-        chartHeight = 300
-        
-        Set chartObj = tgtSheet.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
         With chartObj.Chart
+            ' Set chart type to Pie
             .ChartType = xlPie
-            .SetSourceData Source:=dataRange
+            
+            ' Apply the specified chart style
+            .ChartStyle = 261
+            
+            ' Add and set the chart title
             .HasTitle = True
-            .ChartTitle.Text = tickerName & " Segment Distribution"
+            .ChartTitle.Text = ticker & " Revenue Segments"
             
-            ' Configure data labels to show percentages
-            .ApplyDataLabels Type:=xlDataLabelsShowPercent, LegendKey:=False
-            With .DataLabels
-                .ShowPercentage = True
-                .ShowValue = False
-                .ShowCategoryName = False
-            End With
+            ' Add a new series to the chart
+            .SeriesCollection.NewSeries
+            .SeriesCollection(1).XValues = labelsRange
+            .SeriesCollection(1).Values = dataRange
+            .SeriesCollection(1).Name = "Revenue"
             
-            ' Enhance chart aesthetics
-            .PlotArea.Format.Fill.Visible = msoFalse ' Remove plot area fill
-            .ChartArea.Format.Fill.Visible = msoFalse ' Remove chart area fill
-            .Legend.Position = xlLegendPositionRight
+            ' Optional: Format the chart (e.g., explode first slice)
+            '.SeriesCollection(1).Points(1).Explosion = 10
         End With
         
-        ' Delete the temporary sheet
-        Application.DisplayAlerts = False
-        tempSheet.Delete
-        Application.DisplayAlerts = True
+        ' Increment chart count
+        chartCount = chartCount + 1
         
-        ' Increment to the next ticker (each ticker occupies 4 rows)
-        currentRow = currentRow + 4
+        ' Arrange charts two per row
+        If chartCount Mod 2 = 0 Then
+            ' Reset left position and move down for next row of charts
+            chartLeft = 10
+            chartTop = chartTop + chartHeight + 20 ' 20 points gap between rows
+        Else
+            ' Move to the right for the next chart in the same row
+            chartLeft = chartLeft + chartWidth + 20 ' 20 points gap between charts
+        End If
         
-NextTicker:
-        ' Continue loop
-    Loop
+NextCompany:
+    Next currentRow
     
-    ' Restore settings
-CleanupAndExit:
-    If cleanupRequired Then
-        With Application
-            .ScreenUpdating = True
-            .Calculation = xlCalculationAutomatic
-            .EnableEvents = True
-            .DisplayStatusBar = True
-        End With
-    End If
-    
-    ' Calculate and display elapsed time
-    Dim elapsedTime As Double
-    elapsedTime = Timer - startTime
-    MsgBox "Pie charts have been successfully generated in the 'SegmentPieCharts' sheet." & vbCrLf & _
-           "Elapsed Time: " & Format(elapsedTime, "0.00") & " seconds.", vbInformation
-           
-    Exit Sub
-    
-    ' Error handling
-ErrorHandler:
-    MsgBox "An error occurred: " & Err.Description, vbCritical
-    Resume CleanupAndExit
+    ' Notify the user that charts have been created
+    MsgBox "Pie charts have been successfully created in the 'PieCharts' sheet.", vbInformation
 End Sub
