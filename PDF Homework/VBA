@@ -1,0 +1,109 @@
+Sub CreateRevenuePieCharts()
+    ' Declare variables
+    Dim wsData As Worksheet
+    Dim wsCharts As Worksheet
+    Dim lastRow As Long
+    Dim currentRow As Long
+    Dim ticker As String
+    Dim labelsRange As Range
+    Dim dataRange As Range
+    Dim chartObj As ChartObject
+    Dim chartLeft As Double
+    Dim chartTop As Double
+    Dim chartWidth As Double
+    Dim chartHeight As Double
+    Dim chartCount As Integer
+    Dim lastCol As Long
+    Dim i As Integer
+    
+    ' Set the data worksheet
+    On Error Resume Next
+    Set wsData = ThisWorkbook.Sheets("SegmentData")
+    If wsData Is Nothing Then
+        MsgBox "Sheet 'SegmentData' not found!", vbCritical
+        Exit Sub
+    End If
+    On Error GoTo 0
+    
+    ' Create or clear the PieCharts worksheet
+    On Error Resume Next
+    Set wsCharts = ThisWorkbook.Sheets("PieCharts")
+    If wsCharts Is Nothing Then
+        Set wsCharts = ThisWorkbook.Sheets.Add(After:=wsData)
+        wsCharts.Name = "PieCharts"
+    Else
+        wsCharts.Cells.Clear
+    End If
+    On Error GoTo 0
+    
+    ' Determine the last row with data in SegmentData
+    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
+    
+    ' Initialize chart positioning variables
+    chartLeft = 10      ' Starting from 10 points from the left
+    chartTop = 10       ' Starting from 10 points from the top
+    chartWidth = 400    ' Width of each chart
+    chartHeight = 300   ' Height of each chart
+    chartCount = 0      ' Counter to manage chart placement
+    
+    ' Loop through the data every 4 rows starting from row 3
+    For currentRow = 3 To lastRow Step 4
+        ' Get the ticker symbol from the current row, first column (A)
+        ticker = Trim(wsData.Cells(currentRow, 1).Value)
+        
+        ' If ticker is empty, assume no more companies and exit loop
+        If ticker = "" Then Exit For
+        
+        ' Determine the last column with data for labels and values
+        lastCol = wsData.Cells(currentRow + 1, wsData.Columns.Count).End(xlToLeft).Column
+        If lastCol < 1 Then GoTo NextCompany
+        
+        ' Set the range for segment labels (Row currentRow + 1)
+        Set labelsRange = wsData.Range(wsData.Cells(currentRow + 1, 1), wsData.Cells(currentRow + 1, lastCol))
+        
+        ' Set the range for segment data (Row currentRow + 2)
+        Set dataRange = wsData.Range(wsData.Cells(currentRow + 2, 1), wsData.Cells(currentRow + 2, lastCol))
+        
+        ' Add a new chart to the PieCharts sheet
+        Set chartObj = wsCharts.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
+        
+        With chartObj.Chart
+            ' Set chart type to Pie
+            .ChartType = xlPie
+            
+            ' Apply the specified chart style
+            .ChartStyle = 261
+            
+            ' Add and set the chart title
+            .HasTitle = True
+            .ChartTitle.Text = ticker & " Revenue Segments"
+            
+            ' Add a new series to the chart
+            .SeriesCollection.NewSeries
+            .SeriesCollection(1).XValues = labelsRange
+            .SeriesCollection(1).Values = dataRange
+            .SeriesCollection(1).Name = "Revenue"
+            
+            ' Optional: Format the chart (e.g., explode first slice)
+            '.SeriesCollection(1).Points(1).Explosion = 10
+        End With
+        
+        ' Increment chart count
+        chartCount = chartCount + 1
+        
+        ' Arrange charts two per row
+        If chartCount Mod 2 = 0 Then
+            ' Reset left position and move down for next row of charts
+            chartLeft = 10
+            chartTop = chartTop + chartHeight + 20 ' 20 points gap between rows
+        Else
+            ' Move to the right for the next chart in the same row
+            chartLeft = chartLeft + chartWidth + 20 ' 20 points gap between charts
+        End If
+        
+NextCompany:
+    Next currentRow
+    
+    ' Notify the user that charts have been created
+    MsgBox "Pie charts have been successfully created in the 'PieCharts' sheet.", vbInformation
+End Sub
