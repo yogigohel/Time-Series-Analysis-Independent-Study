@@ -9,11 +9,8 @@ For Each chartObj In pieChartsSheet.ChartObjects
         Dim ser As Series
         For Each ser In chartObj.Chart.SeriesCollection
             copiedChartObj.Chart.SeriesCollection.NewSeries
-            With copiedChartObj.Chart.SeriesCollection(copiedChartObj.Chart.SeriesCollection.Count)
-                .Name = ser.Name
-                .XValues = ser.XValues
-                .Values = ser.Values
-            End With
+            ' Copy the series formula
+            copiedChartObj.Chart.SeriesCollection(copiedChartObj.Chart.SeriesCollection.Count).Formula = ser.Formula
         Next ser
         ' Copy chart title
         copiedChartObj.Chart.HasTitle = chartObj.Chart.HasTitle
