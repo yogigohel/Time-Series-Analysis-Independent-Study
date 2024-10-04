@@ -6,6 +6,8 @@ Sub OrganizeSegmentDataOptimized()
     Dim tgtRow As Long
     Dim i As Long
     Dim startTime As Double
+    Dim currentRow As Long
+    Dim elapsedTime As Double
     
     ' Start timer to measure performance
     startTime = Timer
@@ -20,10 +22,12 @@ Sub OrganizeSegmentDataOptimized()
     
     On Error GoTo Cleanup ' Ensure settings are restored even if an error occurs
     
-    ' Set the source sheet to "Ticker"
-    Set srcSheet = Worksheets("Ticker")
+    ' Set the source sheet to "Tickers" (corrected from "Ticker")
+    On Error GoTo SheetNotFound
+    Set srcSheet = Worksheets("Tickers")
     
     ' Set the table to "Basket" in the source sheet
+    On Error GoTo TableNotFound
     Set tbl = srcSheet.ListObjects("Basket")
     
     ' Ensure the target sheet "SegmentData" exists or create it
@@ -40,15 +44,22 @@ Sub OrganizeSegmentDataOptimized()
     ' Read all values from the first column of the "Basket" table into an array
     valueArray = tbl.ListColumns(1).DataBodyRange.Value
     
+    ' Check if the table has data
+    If IsEmpty(valueArray) Then
+        MsgBox "The 'Basket' table in 'Tickers' sheet is empty.", vbExclamation
+        GoTo Cleanup
+    End If
+    
     ' Add a title at the top of the target sheet
     With tgtSheet.Range("A1:C1")
+        .Merge
         .Value = "Segment Data Overview"
         .Font.Size = 16
         .Font.Bold = True
         .Font.Color = RGB(0, 112, 192)
         .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
     End With
-    tgtSheet.Range("A1:C1").Merge
     
     ' Set column widths for better readability
     With tgtSheet
@@ -62,7 +73,6 @@ Sub OrganizeSegmentDataOptimized()
     
     ' Loop through the array and populate the target sheet
     For i = 1 To UBound(valueArray, 1)
-        Dim currentRow As Long
         currentRow = tgtRow + (i - 1) * 4
         
         ' Write the ticker/segment name from the "Basket" table to the SegmentData sheet
@@ -74,8 +84,11 @@ Sub OrganizeSegmentDataOptimized()
         End With
         
         ' Merge cells for the header across columns A to C
-        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).Merge
-        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).HorizontalAlignment = xlCenter
+        With tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3))
+            .Merge
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+        End With
         
         ' Insert labels and formulas
         With tgtSheet.Cells(currentRow + 1, 1)
@@ -102,9 +115,11 @@ Sub OrganizeSegmentDataOptimized()
     tgtSheet.Rows.AutoFit
     
     ' Freeze panes to keep the title visible when scrolling
-    tgtSheet.Activate
-    tgtSheet.Range("A3").Select
-    tgtSheet.Application.ActiveWindow.FreezePanes = True
+    With tgtSheet
+        .Activate
+        .Range("A3").Select
+        .Application.ActiveWindow.FreezePanes = True
+    End With
     
     ' Apply a consistent font to the entire sheet
     With tgtSheet.Cells
@@ -112,6 +127,22 @@ Sub OrganizeSegmentDataOptimized()
         .Font.Size = 11
     End With
     
+    ' Calculate and display elapsed time
+    elapsedTime = Timer - startTime
+    MsgBox "Segment data has been successfully organized in the 'SegmentData' sheet." & vbCrLf & _
+           "Elapsed Time: " & Format(elapsedTime, "0.00") & " seconds.", vbInformation
+           
+    Exit Sub
+
+' Error Handling
+SheetNotFound:
+    MsgBox "The sheet 'Tickers' was not found. Please check the sheet name and try again.", vbCritical
+    GoTo Cleanup
+
+TableNotFound:
+    MsgBox "The table 'Basket' was not found in the 'Tickers' sheet. Please check the table name and try again.", vbCritical
+    GoTo Cleanup
+
 Cleanup:
     ' Restore settings
     With Application
@@ -120,10 +151,4 @@ Cleanup:
         .EnableEvents = True
         .DisplayStatusBar = True
     End With
-    
-    ' Calculate and display elapsed time
-    Dim elapsedTime As Double
-    elapsedTime = Timer - startTime
-    MsgBox "Segment data has been successfully organized in the 'SegmentData' sheet." & vbCrLf & _
-           "Elapsed Time: " & Format(elapsedTime, "0.00") & " seconds.", vbInformation
 End Sub
