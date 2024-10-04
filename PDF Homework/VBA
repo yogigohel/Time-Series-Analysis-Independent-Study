@@ -5,7 +5,6 @@ Sub OrganizeSegmentDataOptimized()
     Dim valueArray As Variant
     Dim tgtRow As Long
     Dim i As Long
-    Dim lastTicker As Long
     Dim startTime As Double
     
     ' Start timer to measure performance
@@ -21,23 +20,13 @@ Sub OrganizeSegmentDataOptimized()
     
     On Error GoTo Cleanup ' Ensure settings are restored even if an error occurs
     
-    ' Initialize source sheet (Ticker sheet)
+    ' Set the source sheet to "Ticker"
     Set srcSheet = Worksheets("Ticker")
     
-    ' Check if the table named "Basket" exists in the source sheet
-    On Error Resume Next
+    ' Set the table to "Basket" in the source sheet
     Set tbl = srcSheet.ListObjects("Basket")
-    On Error GoTo Cleanup
     
-    If tbl Is Nothing Then
-        MsgBox "Table 'Basket' not found in the 'Ticker' sheet.", vbExclamation
-        GoTo Cleanup
-    End If
-    
-    ' Read all values from the first column of the "Basket" table into an array
-    valueArray = tbl.ListColumns(1).DataBodyRange.Value
-    
-    ' Create or clear the target sheet
+    ' Ensure the target sheet "SegmentData" exists or create it
     On Error Resume Next
     Set tgtSheet = Worksheets("SegmentData")
     If tgtSheet Is Nothing Then
@@ -46,9 +35,12 @@ Sub OrganizeSegmentDataOptimized()
     Else
         tgtSheet.Cells.Clear
     End If
-    On Error GoTo Cleanup
+    On Error GoTo 0
     
-    ' Add a title at the top of the sheet
+    ' Read all values from the first column of the "Basket" table into an array
+    valueArray = tbl.ListColumns(1).DataBodyRange.Value
+    
+    ' Add a title at the top of the target sheet
     With tgtSheet.Range("A1:C1")
         .Value = "Segment Data Overview"
         .Font.Size = 16
@@ -56,7 +48,6 @@ Sub OrganizeSegmentDataOptimized()
         .Font.Color = RGB(0, 112, 192)
         .HorizontalAlignment = xlCenter
     End With
-    ' Merge the title across columns A to C
     tgtSheet.Range("A1:C1").Merge
     
     ' Set column widths for better readability
@@ -66,15 +57,15 @@ Sub OrganizeSegmentDataOptimized()
         .Columns("C").ColumnWidth = 30
     End With
     
-    ' Initialize target row (start from row 3 to leave space below the title)
+    ' Start filling the target sheet from row 3
     tgtRow = 3
     
-    ' Populate the target sheet with headers, labels, and formulas
+    ' Loop through the array and populate the target sheet
     For i = 1 To UBound(valueArray, 1)
         Dim currentRow As Long
         currentRow = tgtRow + (i - 1) * 4
         
-        ' Write the header (data from the "Basket" table)
+        ' Write the ticker/segment name from the "Basket" table to the SegmentData sheet
         With tgtSheet.Cells(currentRow, 1)
             .Value = valueArray(i, 1)
             .Font.Size = 14
@@ -121,8 +112,8 @@ Sub OrganizeSegmentDataOptimized()
         .Font.Size = 11
     End With
     
-    ' Restore settings
 Cleanup:
+    ' Restore settings
     With Application
         .ScreenUpdating = True
         .Calculation = xlCalculationAutomatic
