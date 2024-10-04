@@ -84,8 +84,12 @@ Sub CreateRevenuePieCharts()
             .SeriesCollection(1).Values = dataRange
             .SeriesCollection(1).Name = "Revenue"
             
-            ' Optional: Format the chart (e.g., add data labels for clarity)
-            .SeriesCollection(1).ApplyDataLabels
+            ' Apply data labels with percentage format
+            With .SeriesCollection(1)
+                .ApplyDataLabels
+                .DataLabels.ShowPercentage = True
+                .DataLabels.ShowValue = False ' Hide actual values
+            End With
         End With
         
         ' Increment chart count
