@@ -1,324 +1,7 @@
-Sub PortfolioDashboard()
-    Dim srcSheet As Worksheet
-    Dim dataSheet As Worksheet
-    Dim dashboardSheet As Worksheet
-    Dim lastSegmentDataRow As Long
-    
-    ' Ensure required sheets exist
-    On Error GoTo SheetNotFound
-    Set srcSheet = ThisWorkbook.Sheets("Tickers")
-    Set dataSheet = ThisWorkbook.Sheets("Return Data")
-    On Error GoTo 0
-    
-    ' Create or clear the "Dashboard" sheet
-    On Error Resume Next
-    Set dashboardSheet = ThisWorkbook.Sheets("Dashboard")
-    If dashboardSheet Is Nothing Then
-        Set dashboardSheet = ThisWorkbook.Sheets.Add(After:=Worksheets(Worksheets.Count))
-        dashboardSheet.Name = "Dashboard"
-    Else
-        dashboardSheet.Cells.Clear
-    End If
-    On Error GoTo 0
-    
-    ' Run the adjusted functions
-    Call OrganizeSegmentDataOptimized(srcSheet, dashboardSheet, lastSegmentDataRow)
-    Call GenerateCorrelationMatrixOptimized(dataSheet, dashboardSheet, lastSegmentDataRow)
-    Call CreateRevenuePieCharts(dashboardSheet, lastSegmentDataRow)
-    
-    MsgBox "Dashboard has been successfully generated.", vbInformation
-    Exit Sub
-    
-SheetNotFound:
-    MsgBox "Required sheet not found: " & Err.Description, vbCritical
-End Sub
-
-Sub OrganizeSegmentDataOptimized(srcSheet As Worksheet, dashboardSheet As Worksheet, ByRef lastSegmentDataRow As Long)
-    Dim tbl As ListObject
-    Dim valueArray As Variant
-    Dim tgtRow As Long
-    Dim i As Long
-    Dim startTime As Double
-    
-    ' Start timer to measure performance
-    startTime = Timer
-    
-    ' Disable settings to improve performance
-    With Application
-        .ScreenUpdating = False
-        .Calculation = xlCalculationManual
-        .EnableEvents = False
-        .DisplayStatusBar = False
-    End With
-    
-    On Error GoTo Cleanup ' Ensure settings are restored even if an error occurs
-    
-    ' Check if there's a table in the source sheet
-    If srcSheet.ListObjects.Count = 0 Then
-        MsgBox "No table found in the 'Tickers' sheet.", vbExclamation
-        GoTo Cleanup
-    End If
-    
-    ' Assume the first table in the sheet
-    Set tbl = srcSheet.ListObjects(1)
-    
-    ' Read all values from the first column into an array
-    valueArray = tbl.ListColumns(1).DataBodyRange.Value
-    
-    ' Output to dashboardSheet starting from cell A1
-    Dim tgtSheet As Worksheet
-    Set tgtSheet = dashboardSheet
-    
-    ' Set column widths for better readability
-    With tgtSheet
-        .Columns("A").ColumnWidth = 20
-        .Columns("B").ColumnWidth = 50
-        .Columns("C").ColumnWidth = 30
-    End With
-    
-    ' Add a title at the top of the sheet
-    With tgtSheet.Range("A1:C1")
-        .Value = "Segment Data Overview"
-        .Font.Size = 16
-        .Font.Bold = True
-        .Font.Color = RGB(0, 112, 192)
-        .HorizontalAlignment = xlCenter
-    End With
-    ' Merge the title across columns A to C
-    tgtSheet.Range("A1:C1").Merge
-    
-    ' Initialize target row (start from row 3 to leave space below the title)
-    tgtRow = 3
-    
-    ' Populate data
-    For i = 1 To UBound(valueArray, 1)
-        Dim currentRow As Long
-        currentRow = tgtRow + (i - 1) * 4
-        
-        ' Write the header
-        With tgtSheet.Cells(currentRow, 1)
-            .Value = valueArray(i, 1)
-            .Font.Size = 14
-            .Font.Bold = True
-            .Font.Color = RGB(0, 112, 192)
-        End With
-        
-        ' Merge cells for the header across columns A to C
-        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).Merge
-        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).HorizontalAlignment = xlCenter
-        
-        ' Insert labels and formulas
-        With tgtSheet.Cells(currentRow + 1, 1)
-            .Value = "Segment Label:"
-            .Font.Bold = True
-        End With
-        tgtSheet.Cells(currentRow + 1, 2).Formula = "=FDSR(""" & valueArray(i, 1) & """,""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
-        
-        With tgtSheet.Cells(currentRow + 2, 1)
-            .Value = "Segment Data:"
-            .Font.Bold = True
-        End With
-        tgtSheet.Cells(currentRow + 2, 2).Formula = "=FDSR(""" & valueArray(i, 1) & """,""FE_SEGMENT_DATA(SALES,MEAN,BUS,+1,,Y,)"")"
-        
-        ' Add borders around the data block
-        With tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow + 2, 3))
-            .Borders.LineStyle = xlContinuous
-            .Borders.Weight = xlThin
-            .Borders.Color = RGB(200, 200, 200)
-        End With
-    Next i
-    
-    ' Autofit rows for better appearance
-    tgtSheet.Rows.AutoFit
-    
-    ' Freeze panes to keep the title visible when scrolling
-    tgtSheet.Activate
-    tgtSheet.Range("A3").Select
-    tgtSheet.Application.ActiveWindow.FreezePanes = True
-    
-    ' Apply a consistent font to the entire sheet
-    With tgtSheet.Cells
-        .Font.Name = "Calibri"
-        .Font.Size = 11
-    End With
-    
-    ' Set lastSegmentDataRow
-    lastSegmentDataRow = tgtRow + (UBound(valueArray, 1) - 1) * 4 + 2
-    
-Cleanup:
-    ' Restore settings
-    With Application
-        .ScreenUpdating = True
-        .Calculation = xlCalculationAutomatic
-        .EnableEvents = True
-        .DisplayStatusBar = True
-    End With
-End Sub
-
-Sub GenerateCorrelationMatrixOptimized(dataSheet As Worksheet, dashboardSheet As Worksheet, lastSegmentDataRow As Long)
-    Dim ws As Worksheet
-    Dim outputWs As Worksheet
-    Dim headerNames() As String
-    Dim colNumbers() As Long
-    Dim nTickers As Long
-    Dim col As Long
-    Dim headerValue As Variant
-    Dim lastRow As Long
-    Dim dataArray As Variant
-    Dim i As Long, j As Long
-    Dim corrMatrix() As Double
-    Dim sumX() As Double, sumY() As Double
-    Dim sumXY() As Double, sumX2() As Double, sumY2() As Double
-    Dim countData As Long
-    Dim rowIdx As Long
-    
-    ' Initialize worksheet
-    Set ws = dataSheet
-    
-    ' Initialize variables
-    nTickers = 0
-    col = 1
-    
-    ' Collect headers until a 0 is encountered
-    Do While col <= ws.Columns.Count
-        headerValue = ws.Cells(1, col).Value
-        If IsNumeric(headerValue) Then
-            If headerValue = 0 Then Exit Do
-        End If
-        nTickers = nTickers + 1
-        ReDim Preserve headerNames(1 To nTickers)
-        ReDim Preserve colNumbers(1 To nTickers)
-        headerNames(nTickers) = CStr(headerValue)
-        colNumbers(nTickers) = col
-        col = col + 1
-    Loop
-    
-    ' Ensure there are at least two tickers
-    If nTickers < 2 Then Exit Sub
-    
-    ' Determine the last row with data
-    lastRow = 0
-    For i = 1 To nTickers
-        Dim tempLastRow As Long
-        tempLastRow = ws.Cells(ws.Rows.Count, colNumbers(i)).End(xlUp).Row
-        If tempLastRow > lastRow Then lastRow = tempLastRow
-    Next i
-    
-    ' Exit if no data rows found
-    If lastRow < 2 Then Exit Sub
-    
-    ' Read data into an array for faster processing
-    dataArray = ws.Range(ws.Cells(2, colNumbers(1)), ws.Cells(lastRow, colNumbers(nTickers))).Value
-    
-    ' Initialize arrays for sums
-    ReDim sumX(1 To nTickers)
-    ReDim sumY(1 To nTickers)
-    ReDim sumXY(1 To nTickers, 1 To nTickers)
-    ReDim sumX2(1 To nTickers)
-    ReDim sumY2(1 To nTickers)
-    
-    ' Calculate sums and sums of squares/products
-    For rowIdx = 1 To UBound(dataArray, 1)
-        For i = 1 To nTickers
-            If IsNumeric(dataArray(rowIdx, i)) Then
-                sumX(i) = sumX(i) + dataArray(rowIdx, i)
-                sumX2(i) = sumX2(i) + dataArray(rowIdx, i) ^ 2
-                For j = 1 To nTickers
-                    If IsNumeric(dataArray(rowIdx, j)) Then
-                        sumXY(i, j) = sumXY(i, j) + dataArray(rowIdx, i) * dataArray(rowIdx, j)
-                    End If
-                Next j
-            End If
-        Next i
-    Next rowIdx
-    
-    countData = UBound(dataArray, 1)
-    
-    ' Initialize correlation matrix
-    ReDim corrMatrix(1 To nTickers, 1 To nTickers)
-    
-    ' Compute correlation coefficients
-    For i = 1 To nTickers
-        For j = 1 To nTickers
-            If i = j Then
-                corrMatrix(i, j) = 1
-            Else
-                Dim numerator As Double, denominator As Double
-                numerator = sumXY(i, j) - (sumX(i) * sumX(j) / countData)
-                denominator = Sqr((sumX2(i) - (sumX(i) ^ 2) / countData) * (sumX2(j) - (sumX(j) ^ 2) / countData))
-                If denominator <> 0 Then
-                    corrMatrix(i, j) = numerator / denominator
-                Else
-                    corrMatrix(i, j) = CVErr(xlErrDiv0)
-                End If
-            End If
-        Next j
-    Next i
-    
-    ' Write headers to the dashboard sheet starting at a position that doesn't overlap
-    Dim outputStartRow As Long, outputStartCol As Long
-    outputStartRow = 1
-    outputStartCol = 10 ' Column J
-    
-    Set outputWs = dashboardSheet
-    
-    ' Add a title
-    With outputWs.Cells(outputStartRow, outputStartCol)
-        .Value = "Correlation Matrix"
-        .Font.Bold = True
-        .Font.Size = 16
-        .Font.Color = RGB(0, 112, 192)
-    End With
-    
-    ' Write headers
-    For i = 1 To nTickers
-        outputWs.Cells(outputStartRow + 1, outputStartCol + i).Value = headerNames(i)
-        outputWs.Cells(outputStartRow + 1 + i, outputStartCol).Value = headerNames(i)
-    Next i
-    
-    ' Write the correlation matrix
-    outputWs.Range(outputWs.Cells(outputStartRow + 2, outputStartCol + 1), outputWs.Cells(outputStartRow + 1 + nTickers, outputStartCol + nTickers)).Value = corrMatrix
-    
-    ' Format the correlation matrix
-    With outputWs.Range(outputWs.Cells(outputStartRow + 1, outputStartCol), outputWs.Cells(outputStartRow + 1 + nTickers, outputStartCol + nTickers))
-        .Font.Bold = True
-        .HorizontalAlignment = xlCenter
-        .NumberFormat = "0.00"
-        .Borders.LineStyle = xlContinuous
-        .Borders.Weight = xlThin
-        .Columns.AutoFit
-    End With
-    
-    ' Apply conditional formatting
-    With outputWs.Range(outputWs.Cells(outputStartRow + 2, outputStartCol + 1), outputWs.Cells(outputStartRow + 1 + nTickers, outputStartCol + nTickers))
-        ' Clear any existing conditional formats
-        .FormatConditions.Delete
-        
-        ' Add a 3-color scale conditional formatting
-        .FormatConditions.AddColorScale ColorScaleType:=3
-        
-        With .FormatConditions(.FormatConditions.Count)
-            ' Define the minimum value (-1) with blue color
-            .ColorScaleCriteria(1).Type = xlConditionValueNumber
-            .ColorScaleCriteria(1).Value = -1
-            .ColorScaleCriteria(1).FormatColor.Color = RGB(0, 0, 255) ' Blue
-            
-            ' Define the midpoint value (0) with white color
-            .ColorScaleCriteria(2).Type = xlConditionValueNumber
-            .ColorScaleCriteria(2).Value = 0
-            .ColorScaleCriteria(2).FormatColor.Color = RGB(255, 255, 255) ' White
-            
-            ' Define the maximum value (1) with red color
-            .ColorScaleCriteria(3).Type = xlConditionValueNumber
-            .ColorScaleCriteria(3).Value = 1
-            .ColorScaleCriteria(3).FormatColor.Color = RGB(255, 0, 0) ' Red
-        End With
-    End With
-End Sub
-
-Sub CreateRevenuePieCharts(dashboardSheet As Worksheet, lastSegmentDataRow As Long)
+Sub CreateRevenuePieCharts()
     ' Declare variables
     Dim wsData As Worksheet
+    Dim wsCharts As Worksheet
     Dim lastRow As Long
     Dim currentRow As Long
     Dim ticker As String
@@ -334,17 +17,37 @@ Sub CreateRevenuePieCharts(dashboardSheet As Worksheet, lastSegmentDataRow As Lo
     Dim i As Integer
     
     ' Set the data worksheet
-    Set wsData = dashboardSheet
+    On Error Resume Next
+    Set wsData = ThisWorkbook.Sheets("SegmentData")
+    If wsData Is Nothing Then
+        MsgBox "Sheet 'SegmentData' not found!", vbCritical
+        Exit Sub
+    End If
+    On Error GoTo 0
     
-    ' Determine where to start placing charts to avoid overlapping
-    chartLeft = 10
-    chartTop = lastSegmentDataRow * 15 ' Adjust as needed
-    chartWidth = 350
-    chartHeight = 250
-    chartCount = 0
+    ' Create or clear the PieCharts worksheet
+    On Error Resume Next
+    Set wsCharts = ThisWorkbook.Sheets("PieCharts")
+    If wsCharts Is Nothing Then
+        Set wsCharts = ThisWorkbook.Sheets.Add(After:=wsData)
+        wsCharts.Name = "PieCharts"
+    Else
+        wsCharts.Cells.Clear
+    End If
+    On Error GoTo 0
+    
+    ' Determine the last row with data in SegmentData
+    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
+    
+    ' Initialize chart positioning variables
+    chartLeft = 10      ' Starting from 10 points from the left
+    chartTop = 10       ' Starting from 10 points from the top
+    chartWidth = 400    ' Width of each chart
+    chartHeight = 300   ' Height of each chart
+    chartCount = 0      ' Counter to manage chart placement
     
     ' Loop through the data every 4 rows starting from row 3
-    For currentRow = 3 To lastSegmentDataRow Step 4
+    For currentRow = 3 To lastRow Step 4
         ' Get the ticker symbol from the current row, first column (A)
         ticker = Trim(wsData.Cells(currentRow, 1).Value)
         
@@ -353,28 +56,27 @@ Sub CreateRevenuePieCharts(dashboardSheet As Worksheet, lastSegmentDataRow As Lo
         
         ' Determine the last column with data for labels and values
         lastCol = wsData.Cells(currentRow + 1, wsData.Columns.Count).End(xlToLeft).Column
-        If lastCol < 2 Then GoTo NextCompany ' No data, skip to next
+        If lastCol < 2 Then GoTo NextCompany ' Ensure there's data beyond column A
         
-        ' Set the range for segment labels (Row currentRow + 1)
+        ' Set the range for segment labels (Row currentRow + 1), starting from column B
         Set labelsRange = wsData.Range(wsData.Cells(currentRow + 1, 2), wsData.Cells(currentRow + 1, lastCol))
         
-        ' Set the range for segment data (Row currentRow + 2)
+        ' Set the range for segment data (Row currentRow + 2), starting from column B
         Set dataRange = wsData.Range(wsData.Cells(currentRow + 2, 2), wsData.Cells(currentRow + 2, lastCol))
         
-        ' Add a new chart to the Dashboard sheet
-        Set chartObj = wsData.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
+        ' Add a new chart to the PieCharts sheet
+        Set chartObj = wsCharts.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
         
         With chartObj.Chart
             ' Set chart type to Pie
             .ChartType = xlPie
             
-            ' Apply a ChartStyle that is easy to read
-            .ChartStyle = 251 ' Choose a style with readable fonts and colors
+            ' Apply the specified chart style
+            .ChartStyle = 42 ' Changed from 261 to 42 for better legibility
             
             ' Add and set the chart title
             .HasTitle = True
             .ChartTitle.Text = ticker & " Revenue Segments"
-            .ChartTitle.Font.Size = 14
             
             ' Add a new series to the chart
             .SeriesCollection.NewSeries
@@ -382,12 +84,8 @@ Sub CreateRevenuePieCharts(dashboardSheet As Worksheet, lastSegmentDataRow As Lo
             .SeriesCollection(1).Values = dataRange
             .SeriesCollection(1).Name = "Revenue"
             
-            ' Format data labels
+            ' Optional: Format the chart (e.g., add data labels for clarity)
             .SeriesCollection(1).ApplyDataLabels
-            .SeriesCollection(1).DataLabels.ShowPercentage = True
-            .SeriesCollection(1).DataLabels.ShowCategoryName = True
-            .SeriesCollection(1).DataLabels.Font.Size = 10
-            .SeriesCollection(1).DataLabels.Font.Color = RGB(0, 0, 0)
         End With
         
         ' Increment chart count
@@ -405,4 +103,7 @@ Sub CreateRevenuePieCharts(dashboardSheet As Worksheet, lastSegmentDataRow As Lo
         
 NextCompany:
     Next currentRow
+    
+    ' Notify the user that charts have been created
+    MsgBox "Pie charts have been successfully created in the 'PieCharts' sheet.", vbInformation
 End Sub
