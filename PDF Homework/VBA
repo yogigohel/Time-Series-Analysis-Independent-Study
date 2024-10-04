@@ -24,16 +24,17 @@ Sub OrganizeSegmentDataOptimized()
     ' Initialize source sheet (Ticker sheet)
     Set srcSheet = Worksheets("Ticker")
     
-    ' Check if there's a table in the source sheet
-    If srcSheet.ListObjects.Count = 0 Then
-        MsgBox "No table found in the 'Ticker' sheet.", vbExclamation
+    ' Check if the table named "Basket" exists in the source sheet
+    On Error Resume Next
+    Set tbl = srcSheet.ListObjects("Basket")
+    On Error GoTo Cleanup
+    
+    If tbl Is Nothing Then
+        MsgBox "Table 'Basket' not found in the 'Ticker' sheet.", vbExclamation
         GoTo Cleanup
     End If
     
-    ' Assume the first table in the sheet
-    Set tbl = srcSheet.ListObjects(1)
-    
-    ' Read all values from the first column into an array
+    ' Read all values from the first column of the "Basket" table into an array
     valueArray = tbl.ListColumns(1).DataBodyRange.Value
     
     ' Create or clear the target sheet
@@ -68,37 +69,14 @@ Sub OrganizeSegmentDataOptimized()
     ' Initialize target row (start from row 3 to leave space below the title)
     tgtRow = 3
     
-    ' Prepare arrays to hold data and formatting
-    Dim headers() As Variant
-    Dim labels() As Variant
-    Dim formulasLabel() As Variant
-    Dim formulasData() As Variant
-    ReDim headers(1 To UBound(valueArray, 1), 1 To 1)
-    ReDim labels(1 To UBound(valueArray, 1), 1 To 1)
-    ReDim formulasLabel(1 To UBound(valueArray, 1), 1 To 1)
-    ReDim formulasData(1 To UBound(valueArray, 1), 1 To 1)
-    
-    ' Populate arrays with data
+    ' Populate the target sheet with headers, labels, and formulas
     For i = 1 To UBound(valueArray, 1)
-        headers(i, 1) = valueArray(i, 1)
-        labels(i, 1) = "Segment Label:"
-        formulasLabel(i, 1) = "=FDSR(A" & (tgtRow + (i - 1) * 4) & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
-        labels(i, 1) = "Segment Label:"
-        formulasData(i, 1) = "=FDSR(A" & (tgtRow + (i - 1) * 4) & ",""FE_SEGMENT_DATA(SALES,MEAN,BUS,+1,,Y,)"")"
-    Next i
-    
-    ' Write headers in bulk
-    Dim headerRange As Range
-    Set headerRange = tgtSheet.Range("A3:A" & (3 + UBound(headers, 1) * 4 - 1))
-    
-    ' Instead of writing headers one by one, we'll loop through and write each block
-    For i = 1 To UBound(headers, 1)
         Dim currentRow As Long
         currentRow = tgtRow + (i - 1) * 4
         
-        ' Write the header
+        ' Write the header (data from the "Basket" table)
         With tgtSheet.Cells(currentRow, 1)
-            .Value = headers(i, 1)
+            .Value = valueArray(i, 1)
             .Font.Size = 14
             .Font.Bold = True
             .Font.Color = RGB(0, 112, 192)
