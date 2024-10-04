@@ -1,154 +1,135 @@
-Sub OrganizeSegmentDataOptimized()
-    Dim srcSheet As Worksheet
-    Dim tgtSheet As Worksheet
-    Dim tbl As ListObject
-    Dim valueArray As Variant
-    Dim tgtRow As Long
-    Dim i As Long
-    Dim startTime As Double
-    Dim currentRow As Long
-    Dim elapsedTime As Double
-    
-    ' Start timer to measure performance
-    startTime = Timer
-    
-    ' Disable settings to improve performance
-    With Application
-        .ScreenUpdating = False
-        .Calculation = xlCalculationManual
-        .EnableEvents = False
-        .DisplayStatusBar = False
-    End With
-    
-    On Error GoTo Cleanup ' Ensure settings are restored even if an error occurs
-    
-    ' Set the source sheet to "Tickers" (corrected from "Ticker")
-    On Error GoTo SheetNotFound
-    Set srcSheet = Worksheets("Tickers")
-    
-    ' Set the table to "Basket" in the source sheet
-    On Error GoTo TableNotFound
-    Set tbl = srcSheet.ListObjects("Basket")
-    
-    ' Ensure the target sheet "SegmentData" exists or create it
+Sub GenerateDashboard()
+    Dim dashboardSheet As Worksheet
+    Dim correlationSheet As Worksheet
+    Dim pieChartsSheet As Worksheet
+    Dim lastRow As Long
+    Dim chartObj As ChartObject
+    Dim copiedChartObj As ChartObject
+    Dim chartCount As Integer
+    Dim chartLeft As Double
+    Dim chartTop As Double
+    Dim chartWidth As Double
+    Dim chartHeight As Double
+    Dim chartsPerRow As Integer
+    Dim shp As Shape
+    Dim destRow As Long
+    Dim corrUsedRange As Range
+    Dim i As Integer
+
+    ' Run the required functions in the specified order
+    OrganizeSegmentDataOptimized
+    FactSet_Refresh
+    Refresh_PivotTable
+    GenerateCorrelationMatrixOptimized
+    CreateRevenuePieCharts
+
+    ' Create or clear the "dashboard" sheet
     On Error Resume Next
-    Set tgtSheet = Worksheets("SegmentData")
-    If tgtSheet Is Nothing Then
-        Set tgtSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
-        tgtSheet.Name = "SegmentData"
+    Set dashboardSheet = ThisWorkbook.Worksheets("dashboard")
+    If dashboardSheet Is Nothing Then
+        Set dashboardSheet = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        dashboardSheet.Name = "dashboard"
     Else
-        tgtSheet.Cells.Clear
+        dashboardSheet.Cells.Clear
+        ' Delete any existing shapes or charts
+        For Each shp In dashboardSheet.Shapes
+            shp.Delete
+        Next shp
     End If
     On Error GoTo 0
-    
-    ' Read all values from the first column of the "Basket" table into an array
-    valueArray = tbl.ListColumns(1).DataBodyRange.Value
-    
-    ' Check if the table has data
-    If IsEmpty(valueArray) Then
-        MsgBox "The 'Basket' table in 'Tickers' sheet is empty.", vbExclamation
-        GoTo Cleanup
-    End If
-    
-    ' Add a title at the top of the target sheet
-    With tgtSheet.Range("A1:C1")
-        .Merge
-        .Value = "Segment Data Overview"
-        .Font.Size = 16
-        .Font.Bold = True
-        .Font.Color = RGB(0, 112, 192)
-        .HorizontalAlignment = xlCenter
-        .VerticalAlignment = xlCenter
-    End With
-    
-    ' Set column widths for better readability
-    With tgtSheet
-        .Columns("A").ColumnWidth = 20
-        .Columns("B").ColumnWidth = 50
-        .Columns("C").ColumnWidth = 30
-    End With
-    
-    ' Start filling the target sheet from row 3
-    tgtRow = 3
-    
-    ' Loop through the array and populate the target sheet
-    For i = 1 To UBound(valueArray, 1)
-        currentRow = tgtRow + (i - 1) * 4
-        
-        ' Write the ticker/segment name from the "Basket" table to the SegmentData sheet
-        With tgtSheet.Cells(currentRow, 1)
-            .Value = valueArray(i, 1)
-            .Font.Size = 14
-            .Font.Bold = True
-            .Font.Color = RGB(0, 112, 192)
-        End With
-        
-        ' Merge cells for the header across columns A to C
-        With tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3))
-            .Merge
-            .HorizontalAlignment = xlCenter
-            .VerticalAlignment = xlCenter
-        End With
-        
-        ' Insert labels and formulas
-        With tgtSheet.Cells(currentRow + 1, 1)
-            .Value = "Segment Label:"
-            .Font.Bold = True
-        End With
-        tgtSheet.Cells(currentRow + 1, 2).Formula = "=FDSR(A" & currentRow & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
-        
-        With tgtSheet.Cells(currentRow + 2, 1)
-            .Value = "Segment Data:"
-            .Font.Bold = True
-        End With
-        tgtSheet.Cells(currentRow + 2, 2).Formula = "=FDSR(A" & currentRow & ",""FE_SEGMENT_DATA(SALES,MEAN,BUS,+1,,Y,)"")"
-        
-        ' Add borders around the data block
-        With tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow + 2, 3))
-            .Borders.LineStyle = xlContinuous
-            .Borders.Weight = xlThin
-            .Borders.Color = RGB(200, 200, 200)
-        End With
-    Next i
-    
-    ' Autofit rows for better appearance
-    tgtSheet.Rows.AutoFit
-    
-    ' Freeze panes to keep the title visible when scrolling
-    With tgtSheet
-        .Activate
-        .Range("A3").Select
-        .Application.ActiveWindow.FreezePanes = True
-    End With
-    
-    ' Apply a consistent font to the entire sheet
-    With tgtSheet.Cells
-        .Font.Name = "Calibri"
-        .Font.Size = 11
-    End With
-    
-    ' Calculate and display elapsed time
-    elapsedTime = Timer - startTime
-    MsgBox "Segment data has been successfully organized in the 'SegmentData' sheet." & vbCrLf & _
-           "Elapsed Time: " & Format(elapsedTime, "0.00") & " seconds.", vbInformation
-           
-    Exit Sub
 
-' Error Handling
-SheetNotFound:
-    MsgBox "The sheet 'Tickers' was not found. Please check the sheet name and try again.", vbCritical
-    GoTo Cleanup
-
-TableNotFound:
-    MsgBox "The table 'Basket' was not found in the 'Tickers' sheet. Please check the table name and try again.", vbCritical
-    GoTo Cleanup
-
-Cleanup:
-    ' Restore settings
-    With Application
-        .ScreenUpdating = True
-        .Calculation = xlCalculationAutomatic
-        .EnableEvents = True
-        .DisplayStatusBar = True
+    ' Set the dashboard sheet to dark mode
+    With dashboardSheet.Cells
+        .Interior.Color = RGB(0, 0, 0) ' Black background
+        .Font.Color = RGB(255, 255, 255) ' White font
     End With
+
+    ' Copy the correlation matrix from "Correlation Matrix" sheet to the "dashboard" sheet, below row 30
+    Set correlationSheet = ThisWorkbook.Worksheets("Correlation Matrix")
+
+    ' Destination row (start from row 31)
+    destRow = 31
+
+    ' Find the used range in the correlation matrix sheet
+    Set corrUsedRange = correlationSheet.UsedRange
+
+    ' Copy the correlation matrix to the dashboard sheet
+    corrUsedRange.Copy
+    dashboardSheet.Cells(destRow, 1).PasteSpecial Paste:=xlPasteAllUsingSourceTheme
+    Application.CutCopyMode = False
+
+    ' Adjust font color for readability on dark background
+    With dashboardSheet.Range(dashboardSheet.Cells(destRow, 1), _
+                              dashboardSheet.Cells(destRow + corrUsedRange.Rows.Count - 1, corrUsedRange.Columns.Count))
+        .Font.Color = RGB(255, 255, 255) ' White font
+    End With
+
+    ' Copy the charts from the "PieCharts" sheet to the "dashboard" sheet, underneath the matrix
+    Set pieChartsSheet = ThisWorkbook.Worksheets("PieCharts")
+
+    ' Determine the starting top position for the charts
+    Dim chartStartRow As Long
+    chartStartRow = destRow + corrUsedRange.Rows.Count + 1
+
+    ' Initialize chart positioning variables
+    chartLeft = 10     ' Starting from 10 points from the left
+    chartTop = dashboardSheet.Rows(chartStartRow).Top ' Start below the matrix
+    chartWidth = 300   ' Width of each chart
+    chartHeight = 200  ' Height of each chart
+    chartsPerRow = 3   ' Number of charts per row
+    chartCount = 0     ' Counter to manage chart placement
+
+    ' Loop through each chart in the PieCharts sheet
+    For Each chartObj In pieChartsSheet.ChartObjects
+        ' Skip blank charts (charts with no series)
+        If chartObj.Chart.SeriesCollection.Count > 0 Then
+            ' Copy the chart
+            chartObj.Copy
+            ' Paste the chart into the dashboard sheet
+            dashboardSheet.Paste
+            ' Get the pasted chart
+            Set copiedChartObj = dashboardSheet.ChartObjects(dashboardSheet.ChartObjects.Count)
+            ' Position the chart
+            With copiedChartObj
+                .Width = chartWidth
+                .Height = chartHeight
+                .Left = chartLeft
+                .Top = chartTop
+            End With
+            ' Update counters for positioning
+            chartCount = chartCount + 1
+            If chartCount Mod chartsPerRow = 0 Then
+                ' Reset left position and move down for next row of charts
+                chartLeft = 10
+                chartTop = chartTop + chartHeight + 20 ' 20 points gap between rows
+            Else
+                ' Move to the right for the next chart in the same row
+                chartLeft = chartLeft + chartWidth + 20 ' 20 points gap between charts
+            End If
+        End If
+    Next chartObj
+
+    ' Adjust the font colors in the charts to be visible on black background
+    For Each chartObj In dashboardSheet.ChartObjects
+        With chartObj.Chart
+            .ChartArea.Format.Fill.ForeColor.RGB = RGB(0, 0, 0) ' Black background
+            .ChartArea.Format.Line.Visible = msoFalse
+            .PlotArea.Format.Fill.Visible = msoFalse
+            .PlotArea.Format.Line.Visible = msoFalse
+            .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255) ' White font
+            ' Adjust data labels
+            Dim ser As Series
+            For Each ser In .SeriesCollection
+                ser.DataLabels.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+            Next ser
+            ' Adjust legend if present
+            If .HasLegend Then
+                .Legend.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+            End If
+        End With
+    Next chartObj
+
+    ' Notify the user
+    MsgBox "Dashboard has been successfully generated.", vbInformation
+
 End Sub
