@@ -13,6 +13,7 @@ Sub GenerateDashboard()
     Dim destRow As Long
     Dim corrUsedRange As Range
     Dim tempChartPath As String
+    Dim insertedPicture As Picture
 
     ' Run the required functions in the specified order
     OrganizeSegmentDataOptimized
@@ -47,7 +48,8 @@ Sub GenerateDashboard()
     Application.CutCopyMode = False
 
     ' Adjust font color for readability on dark background
-    With dashboardSheet.Range(dashboardSheet.Cells(destRow, 1), dashboardSheet.Cells(destRow + corrUsedRange.Rows.Count - 1, corrUsedRange.Columns.Count))
+    With dashboardSheet.Range(dashboardSheet.Cells(destRow, 1), _
+                              dashboardSheet.Cells(destRow + corrUsedRange.Rows.Count - 1, corrUsedRange.Columns.Count))
         .Font.Color = RGB(255, 255, 255) ' White font
     End With
 
@@ -74,8 +76,8 @@ Sub GenerateDashboard()
             chartObj.Chart.Export Filename:=tempChartPath, FilterName:="PNG"
             
             ' Insert the exported image into the dashboard sheet
-            dashboardSheet.Pictures.Insert(tempChartPath).Select
-            With Selection
+            Set insertedPicture = dashboardSheet.Pictures.Insert(tempChartPath)
+            With insertedPicture
                 .Left = chartLeft
                 .Top = chartTop
                 .Width = chartWidth
