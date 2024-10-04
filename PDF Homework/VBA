@@ -4,17 +4,15 @@ Sub GenerateDashboard()
     Dim pieChartsSheet As Worksheet
     Dim lastRow As Long
     Dim chartObj As ChartObject
-    Dim copiedChartObj As ChartObject
-    Dim chartCount As Integer
     Dim chartLeft As Double
     Dim chartTop As Double
     Dim chartWidth As Double
     Dim chartHeight As Double
     Dim chartsPerRow As Integer
-    Dim shp As Shape
+    Dim chartCount As Integer
     Dim destRow As Long
     Dim corrUsedRange As Range
-    Dim i As Integer
+    Dim tempChartPath As String
 
     ' Run the required functions in the specified order
     OrganizeSegmentDataOptimized
@@ -31,10 +29,6 @@ Sub GenerateDashboard()
         dashboardSheet.Name = "dashboard"
     Else
         dashboardSheet.Cells.Clear
-        ' Delete any existing shapes or charts
-        For Each shp In dashboardSheet.Shapes
-            shp.Delete
-        Next shp
     End If
     On Error GoTo 0
 
@@ -46,21 +40,14 @@ Sub GenerateDashboard()
 
     ' Copy the correlation matrix from "Correlation Matrix" sheet to the "dashboard" sheet, below row 30
     Set correlationSheet = ThisWorkbook.Worksheets("Correlation Matrix")
-
-    ' Destination row (start from row 31)
     destRow = 31
-
-    ' Find the used range in the correlation matrix sheet
     Set corrUsedRange = correlationSheet.UsedRange
-
-    ' Copy the correlation matrix to the dashboard sheet
     corrUsedRange.Copy
     dashboardSheet.Cells(destRow, 1).PasteSpecial Paste:=xlPasteAllUsingSourceTheme
     Application.CutCopyMode = False
 
     ' Adjust font color for readability on dark background
-    With dashboardSheet.Range(dashboardSheet.Cells(destRow, 1), _
-                              dashboardSheet.Cells(destRow + corrUsedRange.Rows.Count - 1, corrUsedRange.Columns.Count))
+    With dashboardSheet.Range(dashboardSheet.Cells(destRow, 1), dashboardSheet.Cells(destRow + corrUsedRange.Rows.Count - 1, corrUsedRange.Columns.Count))
         .Font.Color = RGB(255, 255, 255) ' White font
     End With
 
@@ -79,57 +66,33 @@ Sub GenerateDashboard()
     chartsPerRow = 3   ' Number of charts per row
     chartCount = 0     ' Counter to manage chart placement
 
-    ' Loop through each chart in the PieCharts sheet
+    ' Loop through each chart in the PieCharts sheet and export it as an image, then insert it into the dashboard
     For Each chartObj In pieChartsSheet.ChartObjects
-        ' Skip blank charts (charts with no series)
         If chartObj.Chart.SeriesCollection.Count > 0 Then
-            ' Copy the chart
-            chartObj.Copy
-            ' Paste the chart into the dashboard sheet
-            dashboardSheet.Paste
-            ' Get the pasted chart
-            Set copiedChartObj = dashboardSheet.ChartObjects(dashboardSheet.ChartObjects.Count)
-            ' Position the chart
-            With copiedChartObj
-                .Width = chartWidth
-                .Height = chartHeight
+            ' Export the chart as a temporary image file
+            tempChartPath = Environ("Temp") & "\TempChart.png"
+            chartObj.Chart.Export Filename:=tempChartPath, FilterName:="PNG"
+            
+            ' Insert the exported image into the dashboard sheet
+            dashboardSheet.Pictures.Insert(tempChartPath).Select
+            With Selection
                 .Left = chartLeft
                 .Top = chartTop
+                .Width = chartWidth
+                .Height = chartHeight
             End With
-            ' Update counters for positioning
+
+            ' Increment chart count and adjust positioning
             chartCount = chartCount + 1
             If chartCount Mod chartsPerRow = 0 Then
-                ' Reset left position and move down for next row of charts
-                chartLeft = 10
-                chartTop = chartTop + chartHeight + 20 ' 20 points gap between rows
+                chartLeft = 10 ' Reset left position
+                chartTop = chartTop + chartHeight + 20 ' Move down to next row of charts
             Else
-                ' Move to the right for the next chart in the same row
-                chartLeft = chartLeft + chartWidth + 20 ' 20 points gap between charts
+                chartLeft = chartLeft + chartWidth + 20 ' Move right for the next chart
             End If
         End If
     Next chartObj
 
-    ' Adjust the font colors in the charts to be visible on black background
-    For Each chartObj In dashboardSheet.ChartObjects
-        With chartObj.Chart
-            .ChartArea.Format.Fill.ForeColor.RGB = RGB(0, 0, 0) ' Black background
-            .ChartArea.Format.Line.Visible = msoFalse
-            .PlotArea.Format.Fill.Visible = msoFalse
-            .PlotArea.Format.Line.Visible = msoFalse
-            .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255) ' White font
-            ' Adjust data labels
-            Dim ser As Series
-            For Each ser In .SeriesCollection
-                ser.DataLabels.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
-            Next ser
-            ' Adjust legend if present
-            If .HasLegend Then
-                .Legend.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
-            End If
-        End With
-    Next chartObj
-
-    ' Notify the user
+    ' Notify the user that the dashboard has been successfully generated
     MsgBox "Dashboard has been successfully generated.", vbInformation
-
 End Sub
