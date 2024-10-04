@@ -1,113 +1,160 @@
-Sub CreateRevenuePieCharts()
-    ' Declare variables
-    Dim wsData As Worksheet
-    Dim wsCharts As Worksheet
-    Dim lastRow As Long
-    Dim currentRow As Long
-    Dim ticker As String
-    Dim labelsRange As Range
-    Dim dataRange As Range
-    Dim chartObj As ChartObject
-    Dim chartLeft As Double
-    Dim chartTop As Double
-    Dim chartWidth As Double
-    Dim chartHeight As Double
-    Dim chartCount As Integer
-    Dim lastCol As Long
-    Dim i As Integer
+Sub OrganizeSegmentDataOptimized()
+    Dim srcSheet As Worksheet
+    Dim tgtSheet As Worksheet
+    Dim tbl As ListObject
+    Dim valueArray As Variant
+    Dim tgtRow As Long
+    Dim i As Long
+    Dim lastTicker As Long
+    Dim startTime As Double
     
-    ' Set the data worksheet
-    On Error Resume Next
-    Set wsData = ThisWorkbook.Sheets("SegmentData")
-    If wsData Is Nothing Then
-        MsgBox "Sheet 'SegmentData' not found!", vbCritical
-        Exit Sub
+    ' Start timer to measure performance
+    startTime = Timer
+    
+    ' Disable settings to improve performance
+    With Application
+        .ScreenUpdating = False
+        .Calculation = xlCalculationManual
+        .EnableEvents = False
+        .DisplayStatusBar = False
+    End With
+    
+    On Error GoTo Cleanup ' Ensure settings are restored even if an error occurs
+    
+    ' Initialize source sheet (Ticker sheet)
+    Set srcSheet = Worksheets("Ticker")
+    
+    ' Check if there's a table in the source sheet
+    If srcSheet.ListObjects.Count = 0 Then
+        MsgBox "No table found in the 'Ticker' sheet.", vbExclamation
+        GoTo Cleanup
     End If
-    On Error GoTo 0
     
-    ' Create or clear the PieCharts worksheet
+    ' Assume the first table in the sheet
+    Set tbl = srcSheet.ListObjects(1)
+    
+    ' Read all values from the first column into an array
+    valueArray = tbl.ListColumns(1).DataBodyRange.Value
+    
+    ' Create or clear the target sheet
     On Error Resume Next
-    Set wsCharts = ThisWorkbook.Sheets("PieCharts")
-    If wsCharts Is Nothing Then
-        Set wsCharts = ThisWorkbook.Sheets.Add(After:=wsData)
-        wsCharts.Name = "PieCharts"
+    Set tgtSheet = Worksheets("SegmentData")
+    If tgtSheet Is Nothing Then
+        Set tgtSheet = Worksheets.Add(After:=Worksheets(Worksheets.Count))
+        tgtSheet.Name = "SegmentData"
     Else
-        wsCharts.Cells.Clear
+        tgtSheet.Cells.Clear
     End If
-    On Error GoTo 0
+    On Error GoTo Cleanup
     
-    ' Determine the last row with data in SegmentData
-    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
+    ' Add a title at the top of the sheet
+    With tgtSheet.Range("A1:C1")
+        .Value = "Segment Data Overview"
+        .Font.Size = 16
+        .Font.Bold = True
+        .Font.Color = RGB(0, 112, 192)
+        .HorizontalAlignment = xlCenter
+    End With
+    ' Merge the title across columns A to C
+    tgtSheet.Range("A1:C1").Merge
     
-    ' Initialize chart positioning variables
-    chartLeft = 10      ' Starting from 10 points from the left
-    chartTop = 10       ' Starting from 10 points from the top
-    chartWidth = 400    ' Width of each chart
-    chartHeight = 300   ' Height of each chart
-    chartCount = 0      ' Counter to manage chart placement
+    ' Set column widths for better readability
+    With tgtSheet
+        .Columns("A").ColumnWidth = 20
+        .Columns("B").ColumnWidth = 50
+        .Columns("C").ColumnWidth = 30
+    End With
     
-    ' Loop through the data every 4 rows starting from row 3
-    For currentRow = 3 To lastRow Step 4
-        ' Get the ticker symbol from the current row, first column (A)
-        ticker = Trim(wsData.Cells(currentRow, 1).Value)
+    ' Initialize target row (start from row 3 to leave space below the title)
+    tgtRow = 3
+    
+    ' Prepare arrays to hold data and formatting
+    Dim headers() As Variant
+    Dim labels() As Variant
+    Dim formulasLabel() As Variant
+    Dim formulasData() As Variant
+    ReDim headers(1 To UBound(valueArray, 1), 1 To 1)
+    ReDim labels(1 To UBound(valueArray, 1), 1 To 1)
+    ReDim formulasLabel(1 To UBound(valueArray, 1), 1 To 1)
+    ReDim formulasData(1 To UBound(valueArray, 1), 1 To 1)
+    
+    ' Populate arrays with data
+    For i = 1 To UBound(valueArray, 1)
+        headers(i, 1) = valueArray(i, 1)
+        labels(i, 1) = "Segment Label:"
+        formulasLabel(i, 1) = "=FDSR(A" & (tgtRow + (i - 1) * 4) & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
+        labels(i, 1) = "Segment Label:"
+        formulasData(i, 1) = "=FDSR(A" & (tgtRow + (i - 1) * 4) & ",""FE_SEGMENT_DATA(SALES,MEAN,BUS,+1,,Y,)"")"
+    Next i
+    
+    ' Write headers in bulk
+    Dim headerRange As Range
+    Set headerRange = tgtSheet.Range("A3:A" & (3 + UBound(headers, 1) * 4 - 1))
+    
+    ' Instead of writing headers one by one, we'll loop through and write each block
+    For i = 1 To UBound(headers, 1)
+        Dim currentRow As Long
+        currentRow = tgtRow + (i - 1) * 4
         
-        ' If ticker is empty, assume no more companies and exit loop
-        If ticker = "" Then Exit For
-        
-        ' Determine the last column with data for labels and values
-        lastCol = wsData.Cells(currentRow + 1, wsData.Columns.Count).End(xlToLeft).Column
-        If lastCol < 2 Then GoTo NextCompany ' Ensure there's data beyond column A
-        
-        ' Set the range for segment labels (Row currentRow + 1), starting from column B
-        Set labelsRange = wsData.Range(wsData.Cells(currentRow + 1, 2), wsData.Cells(currentRow + 1, lastCol))
-        
-        ' Set the range for segment data (Row currentRow + 2), starting from column B
-        Set dataRange = wsData.Range(wsData.Cells(currentRow + 2, 2), wsData.Cells(currentRow + 2, lastCol))
-        
-        ' Add a new chart to the PieCharts sheet
-        Set chartObj = wsCharts.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
-        
-        With chartObj.Chart
-            ' Set chart type to Pie
-            .ChartType = xlPie
-            
-            ' Apply the specified chart style
-            .ChartStyle = 42 ' Changed from 261 to 42 for better legibility
-            
-            ' Add and set the chart title
-            .HasTitle = True
-            .ChartTitle.Text = ticker & " Revenue Segments"
-            
-            ' Add a new series to the chart
-            .SeriesCollection.NewSeries
-            .SeriesCollection(1).XValues = labelsRange
-            .SeriesCollection(1).Values = dataRange
-            .SeriesCollection(1).Name = "Revenue"
-            
-            ' Apply data labels with percentage format
-            With .SeriesCollection(1)
-                .ApplyDataLabels
-                .DataLabels.ShowPercentage = True
-                .DataLabels.ShowValue = False ' Hide actual values
-            End With
+        ' Write the header
+        With tgtSheet.Cells(currentRow, 1)
+            .Value = headers(i, 1)
+            .Font.Size = 14
+            .Font.Bold = True
+            .Font.Color = RGB(0, 112, 192)
         End With
         
-        ' Increment chart count
-        chartCount = chartCount + 1
+        ' Merge cells for the header across columns A to C
+        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).Merge
+        tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow, 3)).HorizontalAlignment = xlCenter
         
-        ' Arrange charts two per row
-        If chartCount Mod 2 = 0 Then
-            ' Reset left position and move down for next row of charts
-            chartLeft = 10
-            chartTop = chartTop + chartHeight + 20 ' 20 points gap between rows
-        Else
-            ' Move to the right for the next chart in the same row
-            chartLeft = chartLeft + chartWidth + 20 ' 20 points gap between charts
-        End If
+        ' Insert labels and formulas
+        With tgtSheet.Cells(currentRow + 1, 1)
+            .Value = "Segment Label:"
+            .Font.Bold = True
+        End With
+        tgtSheet.Cells(currentRow + 1, 2).Formula = "=FDSR(A" & currentRow & ",""FE_SEGMENT_LABEL(SALES,LABEL,BUS,+1,,Y,)"")"
         
-NextCompany:
-    Next currentRow
+        With tgtSheet.Cells(currentRow + 2, 1)
+            .Value = "Segment Data:"
+            .Font.Bold = True
+        End With
+        tgtSheet.Cells(currentRow + 2, 2).Formula = "=FDSR(A" & currentRow & ",""FE_SEGMENT_DATA(SALES,MEAN,BUS,+1,,Y,)"")"
+        
+        ' Add borders around the data block
+        With tgtSheet.Range(tgtSheet.Cells(currentRow, 1), tgtSheet.Cells(currentRow + 2, 3))
+            .Borders.LineStyle = xlContinuous
+            .Borders.Weight = xlThin
+            .Borders.Color = RGB(200, 200, 200)
+        End With
+    Next i
     
-    ' Notify the user that charts have been created
-    MsgBox "Pie charts have been successfully created in the 'PieCharts' sheet.", vbInformation
+    ' Autofit rows for better appearance
+    tgtSheet.Rows.AutoFit
+    
+    ' Freeze panes to keep the title visible when scrolling
+    tgtSheet.Activate
+    tgtSheet.Range("A3").Select
+    tgtSheet.Application.ActiveWindow.FreezePanes = True
+    
+    ' Apply a consistent font to the entire sheet
+    With tgtSheet.Cells
+        .Font.Name = "Calibri"
+        .Font.Size = 11
+    End With
+    
+    ' Restore settings
+Cleanup:
+    With Application
+        .ScreenUpdating = True
+        .Calculation = xlCalculationAutomatic
+        .EnableEvents = True
+        .DisplayStatusBar = True
+    End With
+    
+    ' Calculate and display elapsed time
+    Dim elapsedTime As Double
+    elapsedTime = Timer - startTime
+    MsgBox "Segment data has been successfully organized in the 'SegmentData' sheet." & vbCrLf & _
+           "Elapsed Time: " & Format(elapsedTime, "0.00") & " seconds.", vbInformation
 End Sub
