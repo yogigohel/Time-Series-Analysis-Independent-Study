@@ -1,100 +1,41 @@
-Sub GenerateDashboard()
-    Dim dashboardSheet As Worksheet
-    Dim correlationSheet As Worksheet
-    Dim pieChartsSheet As Worksheet
-    Dim lastRow As Long
-    Dim chartObj As ChartObject
-    Dim chartLeft As Double
-    Dim chartTop As Double
-    Dim chartWidth As Double
-    Dim chartHeight As Double
-    Dim chartsPerRow As Integer
-    Dim chartCount As Integer
-    Dim destRow As Long
-    Dim corrUsedRange As Range
-    Dim tempChartPath As String
-    Dim insertedPicture As Picture
-
-    ' Run the required functions in the specified order
-    OrganizeSegmentDataOptimized
-    FactSet_Refresh
-    Refresh_PivotTable
-    GenerateCorrelationMatrixOptimized
-    CreateRevenuePieCharts
-
-    ' Create or clear the "dashboard" sheet
-    On Error Resume Next
-    Set dashboardSheet = ThisWorkbook.Worksheets("dashboard")
-    If dashboardSheet Is Nothing Then
-        Set dashboardSheet = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
-        dashboardSheet.Name = "dashboard"
-    Else
-        dashboardSheet.Cells.Clear
-    End If
-    On Error GoTo 0
-
-    ' Set the dashboard sheet to dark mode
-    With dashboardSheet.Cells
-        .Interior.Color = RGB(0, 0, 0) ' Black background
-        .Font.Color = RGB(255, 255, 255) ' White font
-    End With
-
-    ' Copy the correlation matrix from "Correlation Matrix" sheet to the "dashboard" sheet, below row 30
-    Set correlationSheet = ThisWorkbook.Worksheets("Correlation Matrix")
-    destRow = 31
-    Set corrUsedRange = correlationSheet.UsedRange
-    corrUsedRange.Copy
-    dashboardSheet.Cells(destRow, 1).PasteSpecial Paste:=xlPasteAllUsingSourceTheme
-    Application.CutCopyMode = False
-
-    ' Adjust font color for readability on dark background
-    With dashboardSheet.Range(dashboardSheet.Cells(destRow, 1), _
-                              dashboardSheet.Cells(destRow + corrUsedRange.Rows.Count - 1, corrUsedRange.Columns.Count))
-        .Font.Color = RGB(255, 255, 255) ' White font
-    End With
-
-    ' Copy the charts from the "PieCharts" sheet to the "dashboard" sheet, underneath the matrix
-    Set pieChartsSheet = ThisWorkbook.Worksheets("PieCharts")
-
-    ' Determine the starting top position for the charts
-    Dim chartStartRow As Long
-    chartStartRow = destRow + corrUsedRange.Rows.Count + 1
-
-    ' Initialize chart positioning variables
-    chartLeft = 10     ' Starting from 10 points from the left
-    chartTop = dashboardSheet.Rows(chartStartRow).Top ' Start below the matrix
-    chartWidth = 300   ' Width of each chart
-    chartHeight = 200  ' Height of each chart
-    chartsPerRow = 3   ' Number of charts per row
-    chartCount = 0     ' Counter to manage chart placement
-
-    ' Loop through each chart in the PieCharts sheet and export it as an image, then insert it into the dashboard
-    For Each chartObj In pieChartsSheet.ChartObjects
-        If chartObj.Chart.SeriesCollection.Count > 0 Then
-            ' Export the chart as a temporary image file
-            tempChartPath = Environ("Temp") & "\TempChart.png"
-            chartObj.Chart.Export Filename:=tempChartPath, FilterName:="PNG"
-            
-            ' Insert the exported image into the dashboard sheet
-            Set insertedPicture = dashboardSheet.Pictures.Insert(tempChartPath)
-            With insertedPicture
-                .Left = chartLeft
-                .Top = chartTop
-                .Width = chartWidth
-                .Height = chartHeight
+' Loop through each chart in the PieCharts sheet
+For Each chartObj In pieChartsSheet.ChartObjects
+    ' Skip blank charts (charts with no series)
+    If chartObj.Chart.SeriesCollection.Count > 0 Then
+        ' Recreate the chart on the dashboard sheet
+        Set copiedChartObj = dashboardSheet.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
+        copiedChartObj.Chart.ChartType = chartObj.Chart.ChartType
+        ' Copy the series data
+        Dim ser As Series
+        For Each ser In chartObj.Chart.SeriesCollection
+            copiedChartObj.Chart.SeriesCollection.NewSeries
+            With copiedChartObj.Chart.SeriesCollection(copiedChartObj.Chart.SeriesCollection.Count)
+                .Name = ser.Name
+                .XValues = ser.XValues
+                .Values = ser.Values
             End With
-
-            ' Increment chart count and adjust positioning
-            chartCount = chartCount + 1
-            If chartCount Mod chartsPerRow = 0 Then
-                chartLeft = 10 ' Reset left position
-                chartTop = chartTop + chartHeight + 20 ' Move down to next row of charts
-            Else
-                chartLeft = chartLeft + chartWidth + 20 ' Move right for the next chart
-            End If
+        Next ser
+        ' Copy chart title
+        copiedChartObj.Chart.HasTitle = chartObj.Chart.HasTitle
+        If chartObj.Chart.HasTitle Then
+            copiedChartObj.Chart.ChartTitle.Text = chartObj.Chart.ChartTitle.Text
         End If
-    Next chartObj
-
-    ' Notify the user that the dashboard has been successfully generated
-    MsgBox "Dashboard has been successfully generated.", vbInformation
-End Sub
+        ' Position the chart
+        With copiedChartObj
+            .Width = chartWidth
+            .Height = chartHeight
+            .Left = chartLeft
+            .Top = chartTop
+        End With
+        ' Update counters for positioning
+        chartCount = chartCount + 1
+        If chartCount Mod chartsPerRow = 0 Then
+            ' Reset left position and move down for next row of charts
+            chartLeft = 10
+            chartTop = chartTop + chartHeight + 20 ' 20 points gap between rows
+        Else
+            ' Move to the right for the next chart in the same row
+            chartLeft = chartLeft + chartWidth + 20 ' 20 points gap between charts
+        End If
+    End If
+Next chartObj
