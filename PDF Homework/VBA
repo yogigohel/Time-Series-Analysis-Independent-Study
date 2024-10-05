@@ -6,11 +6,10 @@ Sub CopyChartAndSlicer()
     Dim chartObj As ChartObject
     Dim pastedChart As ChartObject
     Dim slicerCache As SlicerCache
-    Dim sourceSlicer As Slicer
-    Dim targetLeft As Double
-    Dim targetTop As Double
     Dim slicerName As String
     Dim slicerCaption As String
+    Dim targetLeft As Double
+    Dim targetTop As Double
     
     On Error GoTo ErrHandler
     
@@ -36,45 +35,61 @@ Sub CopyChartAndSlicer()
     End With
     
     ' Define slicer name and caption
-    slicerName = "Sector/Focus"            ' Ensure this is the exact name of your slicer
+    slicerName = "Slicer_Sector_Focus"    ' Update to match the exact SlicerCache name
     slicerCaption = "Sector/Focus"         ' Caption to display on the slicer
     
-    ' Retrieve the slicer from the source sheet
-    On Error Resume Next
-    Set sourceSlicer = wsSource.Slicers(slicerName)
-    On Error GoTo ErrHandler
+    ' Find the SlicerCache associated with the slicer "Sector/Focus"
+    Set slicerCache = Nothing
+    Dim sc As SlicerCache
+    For Each sc In ThisWorkbook.SlicerCaches
+        ' Check if the SlicerCache has a slicer with the desired caption
+        If sc.Name = slicerName Then
+            Set slicerCache = sc
+            Exit For
+        End If
+    Next sc
     
-    If sourceSlicer Is Nothing Then
-        MsgBox "Slicer '" & slicerName & "' not found on sheet '" & wsSource.Name & "'.", vbCritical
+    ' If the exact SlicerCache name is not known, alternatively:
+    ' Uncomment the following block to find the SlicerCache by slicer name
+    '
+    ' For Each sc In ThisWorkbook.SlicerCaches
+    '     Dim slicer As Slicer
+    '     For Each slicer In sc.Slicers
+    '         If slicer.Caption = slicerCaption Then
+    '             Set slicerCache = sc
+    '             Exit For
+    '         End If
+    '     Next slicer
+    '     If Not slicerCache Is Nothing Then Exit For
+    ' Next sc
+    
+    If slicerCache Is Nothing Then
+        MsgBox "Slicer '" & slicerCaption & "' not found.", vbCritical
         Exit Sub
     End If
     
-    ' Get the associated SlicerCache
-    Set slicerCache = sourceSlicer.SlicerCache
-    
     ' Optional: Remove existing slicer on Dashboard to avoid duplicates
-    Dim existingSlicer As Slicer
     On Error Resume Next
-    Set existingSlicer = slicerCache.Slicers(slicerName)
+    Dim existingSlicer As Slicer
+    Set existingSlicer = slicerCache.Slicers("Dashboard_Sector_Focus") ' Adjust name if necessary
     If Not existingSlicer Is Nothing Then
         existingSlicer.Delete
     End If
     On Error GoTo ErrHandler
     
-    ' Position the slicer next to the pasted chart
-    With pastedChart
-        targetLeft = .Left + .Width + 20    ' 20 points gap to the right of the chart
-        targetTop = .Top                    ' Align the top of the slicer with the chart
-    End With
+    ' Determine the position for the new slicer
+    ' Position it to the right of the pasted chart with a 20-point gap
+    targetLeft = pastedChart.Left + pastedChart.Width + 20
+    targetTop = pastedChart.Top
     
     ' Add the slicer to the Dashboard sheet
     slicerCache.Slicers.Add SlicerDestination:=wsDest, _
-                            Name:=slicerName, _
+                            Name:="Slicer_Sector_Focus_Dashboard", _ ' New name for the slicer
                             Caption:=slicerCaption, _
                             Top:=targetTop, _
                             Left:=targetLeft, _
-                            Width:=sourceSlicer.Width, _
-                            Height:=sourceSlicer.Height
+                            Width:=150, _       ' Set desired width
+                            Height:=200         ' Set desired height
     
     ' Clean up
     Application.CutCopyMode = False
