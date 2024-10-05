@@ -1,194 +1,44 @@
-Sub GenerateDashboard()
-    Dim dashboardSheet As Worksheet
-    Dim correlationSheet As Worksheet
-    Dim wsData As Worksheet
-    Dim lastRow As Long
-    Dim currentRow As Long
-    Dim ticker As String
-    Dim labelsRange As Range
-    Dim dataRange As Range
+Sub CopyChartAndSlicer()
+
+    ' Define variables for sheets
+    Dim wsSource As Worksheet
+    Dim wsDest As Worksheet
     Dim chartObj As ChartObject
-    Dim chartCount As Integer
-    Dim chartLeft As Double
-    Dim chartTop As Double
-    Dim chartWidth As Double
-    Dim chartHeight As Double
-    Dim chartsPerRow As Integer
-    Dim shp As Shape
-    Dim destRow As Long
-    Dim corrUsedRange As Range
-    Dim lastCol As Long
-    Dim chartStartRow As Long
-    Dim ser2 As Series
-    Dim lbl As DataLabel
+    Dim slicer As Slicer
     
-    ' Run the required functions in the specified order
-    OrganizeSegmentDataOptimized
-    FactSet_Refresh
-    Refresh_PivotTable
-    GenerateCorrelationMatrixOptimized
+    ' Set source and destination sheets
+    Set wsSource = ThisWorkbook.Sheets("SectorData")
+    Set wsDest = ThisWorkbook.Sheets("Dashboard")
     
-    ' Create or clear the "dashboard" sheet
-    On Error Resume Next
-    Set dashboardSheet = ThisWorkbook.Worksheets("dashboard")
-    If dashboardSheet Is Nothing Then
-        Set dashboardSheet = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
-        dashboardSheet.Name = "dashboard"
-    Else
-        dashboardSheet.Cells.Clear
-        ' Delete any existing shapes or charts
-        For Each shp In dashboardSheet.Shapes
-            shp.Delete
-        Next shp
-    End If
-    On Error GoTo 0
+    ' Copy the chart named "WeightByIndustry" from SectorData to Dashboard
+    Set chartObj = wsSource.ChartObjects("WeightByIndustry")
     
-    ' Set the dashboard sheet to dark mode
-    With dashboardSheet.Cells
-        .Interior.Color = RGB(0, 0, 0) ' Black background
-        .Font.Color = RGB(255, 255, 255) ' White font
+    ' Paste the chart at cell A1 on the Dashboard sheet
+    chartObj.Copy
+    wsDest.Paste Destination:=wsDest.Range("A1")
+    
+    ' Get the pasted chart (last one on the sheet)
+    Dim pastedChart As ChartObject
+    Set pastedChart = wsDest.ChartObjects(wsDest.ChartObjects.Count)
+    
+    ' Resize and reposition the pasted chart
+    With pastedChart
+        .Left = .Left - 33.5714173228
+        .Top = .Top - 87.1428346457
+        .Width = .Width * 1.099981598
     End With
     
-    ' Copy the correlation matrix from "Correlation Matrix" sheet to the "dashboard" sheet, below row 30
-    Set correlationSheet = ThisWorkbook.Worksheets("Correlation Matrix")
+    ' Copy the slicer named "Sector/Focus" from SectorData to the Dashboard
+    For Each slicer In wsSource.Slicers
+        If slicer.Name = "Sector/Focus" Then
+            slicer.SlicerCache.Slicers("Sector/Focus").Copy
+            ' Paste the slicer to the right of the chart (offset by its width)
+            wsDest.Paste wsDest.Cells(1, 1).Offset(0, pastedChart.Width / wsDest.Cells(1, 1).Width + 2)
+            Exit For
+        End If
+    Next slicer
     
-    ' Destination row (start from row 31)
-    destRow = 31
-    
-    ' Find the used range in the correlation matrix sheet
-    Set corrUsedRange = correlationSheet.UsedRange
-    
-    ' Copy the correlation matrix to the dashboard sheet
-    corrUsedRange.Copy
-    dashboardSheet.Cells(destRow, 1).PasteSpecial Paste:=xlPasteAllUsingSourceTheme
+    ' Clean up
     Application.CutCopyMode = False
     
-    ' Set font color of entire correlation matrix to black
-    With dashboardSheet.Range(dashboardSheet.Cells(destRow, 1), _
-                              dashboardSheet.Cells(destRow + corrUsedRange.Rows.Count - 1, corrUsedRange.Columns.Count))
-        .Font.Color = RGB(0, 0, 0) ' Black font
-    End With
-    
-    ' Adjust font color for headers (first row and first column)
-    With dashboardSheet
-        ' First row (headers)
-        .Range(.Cells(destRow, 1), .Cells(destRow, corrUsedRange.Columns.Count)).Font.Color = RGB(255, 255, 255)
-        ' First column (headers)
-        .Range(.Cells(destRow + 1, 1), .Cells(destRow + corrUsedRange.Rows.Count - 1, 1)).Font.Color = RGB(255, 255, 255)
-    End With
-    
-    ' Generate pie charts directly onto the dashboard sheet
-    Set wsData = ThisWorkbook.Worksheets("SegmentData")
-    If wsData Is Nothing Then
-        MsgBox "Sheet 'SegmentData' not found!", vbCritical
-        Exit Sub
-    End If
-    
-    ' Determine the last row with data in SegmentData
-    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
-    
-    ' Initialize chart positioning variables
-    chartLeft = 10     ' Starting from 10 points from the left
-    chartsPerRow = 3   ' Number of charts per row
-    chartWidth = 300   ' Width of each chart
-    chartHeight = 200  ' Height of each chart
-    chartCount = 0     ' Counter to manage chart placement
-    ' Determine the starting top position for the charts
-    chartStartRow = destRow + corrUsedRange.Rows.Count + 2
-    chartTop = dashboardSheet.Rows(chartStartRow).Top ' Start below the matrix
-    
-    ' Loop through the data every 4 rows starting from row 3
-    For currentRow = 3 To lastRow Step 4
-        ' Get the ticker symbol from the current row, first column (A)
-        ticker = Trim(wsData.Cells(currentRow, 1).Value)
-        
-        ' If ticker is empty, assume no more companies and exit loop
-        If ticker = "" Then Exit For
-        
-        ' Determine the last column with data for labels and values
-        lastCol = wsData.Cells(currentRow + 1, wsData.Columns.Count).End(xlToLeft).Column
-        If lastCol < 2 Then GoTo NextCompany ' Ensure there's data beyond column A
-        
-        ' Set the range for segment labels (Row currentRow + 1), starting from column B
-        Set labelsRange = wsData.Range(wsData.Cells(currentRow + 1, 2), wsData.Cells(currentRow + 1, lastCol))
-        
-        ' Set the range for segment data (Row currentRow + 2), starting from column B
-        Set dataRange = wsData.Range(wsData.Cells(currentRow + 2, 2), wsData.Cells(currentRow + 2, lastCol))
-        
-        ' Add a new chart to the dashboard sheet
-        Set chartObj = dashboardSheet.ChartObjects.Add(Left:=chartLeft, Top:=chartTop, Width:=chartWidth, Height:=chartHeight)
-        
-        With chartObj.Chart
-            ' Set chart type to Pie
-            .ChartType = xlPie
-            
-            ' Apply the specified chart style
-            .ChartStyle = 42
-            
-            ' Add and set the chart title
-            .HasTitle = True
-            .ChartTitle.Text = ticker & " Revenue Segments"
-            
-            ' Add a new series to the chart
-            .SeriesCollection.NewSeries
-            .SeriesCollection(1).XValues = labelsRange
-            .SeriesCollection(1).Values = dataRange
-            .SeriesCollection(1).Name = "Revenue"
-            
-            ' Apply data labels with percentage format
-            With .SeriesCollection(1)
-                .ApplyDataLabels
-                .DataLabels.ShowPercentage = True
-                .DataLabels.ShowValue = False ' Hide actual values
-            End With
-        End With
-        
-        ' Increment chart count
-        chartCount = chartCount + 1
-        
-        ' Arrange charts three per row
-        If chartCount Mod chartsPerRow = 0 Then
-            ' Reset left position and move down for next row of charts
-            chartLeft = 10
-            chartTop = chartTop + chartHeight + 20 ' 20 points gap between rows
-        Else
-            ' Move to the right for the next chart in the same row
-            chartLeft = chartLeft + chartWidth + 20 ' 20 points gap between charts
-        End If
-        
-NextCompany:
-    Next currentRow
-    
-    ' Adjust the font colors in the charts to be visible on black background
-    For Each chartObj In dashboardSheet.ChartObjects
-        With chartObj.Chart
-            .ChartArea.Format.Fill.ForeColor.RGB = RGB(0, 0, 0) ' Black background
-            .ChartArea.Format.Line.Visible = msoFalse
-            .PlotArea.Format.Fill.Visible = msoFalse
-            .PlotArea.Format.Line.Visible = msoFalse
-            If .HasTitle Then
-                .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255) ' White font
-            End If
-            ' Adjust data labels
-            For Each ser2 In .SeriesCollection
-                If ser2.HasDataLabels Then
-                    If TypeName(ser2.DataLabels) = "DataLabel" Then
-                        ser2.DataLabels.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
-                    ElseIf TypeName(ser2.DataLabels) = "DataLabels" Then
-                        For Each lbl In ser2.DataLabels
-                            lbl.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
-                        Next lbl
-                    End If
-                End If
-            Next ser2
-            ' Adjust legend if present
-            If .HasLegend Then
-                .Legend.Format.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
-            End If
-        End With
-    Next chartObj
-    
-    ' Notify the user
-    MsgBox "Dashboard has been successfully generated.", vbInformation
-
 End Sub
