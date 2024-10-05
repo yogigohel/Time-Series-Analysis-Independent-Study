@@ -5,6 +5,7 @@ Sub CopyChartAndSlicer()
     Dim wsDest As Worksheet
     Dim chartObj As ChartObject
     Dim slicer As Slicer
+    Dim slicerCache As SlicerCache
     
     ' Set source and destination sheets
     Set wsSource = ThisWorkbook.Sheets("SectorData")
@@ -28,17 +29,19 @@ Sub CopyChartAndSlicer()
         .Width = .Width * 1.099981598
     End With
     
-    ' Copy the slicer named "Sector/Focus" from SectorData to the Dashboard
-    For Each slicer In wsSource.Slicers
-        If slicer.Name = "Sector/Focus" Then
-            slicer.SlicerCache.Slicers("Sector/Focus").Copy
-            ' Paste the slicer to the right of the chart (offset by its width)
-            wsDest.Paste wsDest.Cells(1, 1).Offset(0, pastedChart.Width / wsDest.Cells(1, 1).Width + 2)
-            Exit For
-        End If
-    Next slicer
+    ' Find and copy the slicer named "Sector/Focus" from SectorData to the Dashboard
+    For Each slicerCache In ThisWorkbook.SlicerCaches
+        For Each slicer In slicerCache.Slicers
+            If slicer.Parent.Name = wsSource.Name And slicer.Name = "Sector/Focus" Then
+                slicer.Copy
+                ' Paste the slicer to the right of the chart (offset by its width)
+                wsDest.Paste wsDest.Cells(1, 1).Offset(0, pastedChart.Width / wsDest.Cells(1, 1).Width + 2)
+                Exit For
+            End If
+        Next slicer
+    Next slicerCache
     
     ' Clean up
     Application.CutCopyMode = False
-    
+
 End Sub
