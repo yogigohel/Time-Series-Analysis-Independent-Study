@@ -4,9 +4,10 @@ Sub CopyChartAndSlicer()
     Dim wsSource As Worksheet
     Dim wsDest As Worksheet
     Dim chartObj As ChartObject
-    Dim slicer As Slicer
     Dim slicerCache As SlicerCache
-    
+    Dim slicer As Slicer
+    Dim targetRange As Range
+
     ' Set source and destination sheets
     Set wsSource = ThisWorkbook.Sheets("SectorData")
     Set wsDest = ThisWorkbook.Sheets("Dashboard")
@@ -29,16 +30,23 @@ Sub CopyChartAndSlicer()
         .Width = .Width * 1.099981598
     End With
     
-    ' Find and copy the slicer named "Sector/Focus" from SectorData to the Dashboard
+    ' Find the SlicerCache associated with the slicer "Sector/Focus"
     For Each slicerCache In ThisWorkbook.SlicerCaches
-        For Each slicer In slicerCache.Slicers
-            If slicer.Parent.Name = wsSource.Name And slicer.Name = "Sector/Focus" Then
-                slicer.Copy
-                ' Paste the slicer to the right of the chart (offset by its width)
-                wsDest.Paste wsDest.Cells(1, 1).Offset(0, pastedChart.Width / wsDest.Cells(1, 1).Width + 2)
+        If slicerCache.Slicers.Count > 0 Then
+            If slicerCache.Slicers(1).Name = "Sector/Focus" Then
+                ' Create a new slicer on the Dashboard sheet and link it to the same SlicerCache
+                Set targetRange = wsDest.Range("A1").Offset(0, pastedChart.Width / wsDest.Cells(1, 1).Width + 2)
+                
+                slicerCache.Slicers.Add SlicerDestination:=wsDest, _
+                                        Name:="Sector/Focus", _
+                                        Caption:="Sector/Focus", _
+                                        Top:=targetRange.Top, _
+                                        Left:=targetRange.Left, _
+                                        Width:=slicerCache.Slicers(1).Width, _
+                                        Height:=slicerCache.Slicers(1).Height
                 Exit For
             End If
-        Next slicer
+        End If
     Next slicerCache
     
     ' Clean up
