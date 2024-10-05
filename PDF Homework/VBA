@@ -1,103 +1,30 @@
-Sub CopyChartAndSlicer()
+Sub CreateSlicerForPivotChart()
 
-    ' Define variables for sheets
-    Dim wsSource As Worksheet
-    Dim wsDest As Worksheet
-    Dim chartObj As ChartObject
-    Dim pastedChart As ChartObject
+    Dim ws As Worksheet
+    Dim pvtChart As ChartObject
+    Dim pvtTable As PivotTable
     Dim slicerCache As SlicerCache
-    Dim slicerName As String
-    Dim slicerCaption As String
-    Dim targetLeft As Double
-    Dim targetTop As Double
+
+    ' Select the Dashboard sheet
+    Set ws = ThisWorkbook.Sheets("Dashboard")
+    ws.Select
     
-    On Error GoTo ErrHandler
+    ' Find the PivotChart named "WeightByIndustry"
+    Set pvtChart = ws.ChartObjects("WeightByIndustry")
     
-    ' Set source and destination sheets
-    Set wsSource = ThisWorkbook.Sheets("SectorData")
-    Set wsDest = ThisWorkbook.Sheets("Dashboard")
-    
-    ' Copy the chart named "WeightByIndustry" from SectorData to Dashboard
-    Set chartObj = wsSource.ChartObjects("WeightByIndustry")
-    
-    ' Copy and paste the chart at cell A1 on the Dashboard sheet
-    chartObj.Copy
-    wsDest.Paste Destination:=wsDest.Range("A1")
-    
-    ' Get the pasted chart (assuming it's the last chart in the Dashboard sheet)
-    Set pastedChart = wsDest.ChartObjects(wsDest.ChartObjects.Count)
-    
-    ' Resize and reposition the pasted chart
-    With pastedChart
-        .Left = .Left - 33.5714173228    ' Adjust as needed
-        .Top = .Top - 87.1428346457      ' Adjust as needed
-        .Width = .Width * 1.099981598     ' Adjust as needed
-    End With
-    
-    ' Define slicer name and caption
-    slicerName = "Slicer_Sector_Focus"    ' Update to match the exact SlicerCache name
-    slicerCaption = "Sector/Focus"         ' Caption to display on the slicer
-    
-    ' Find the SlicerCache associated with the slicer "Sector/Focus"
-    Set slicerCache = Nothing
-    Dim sc As SlicerCache
-    For Each sc In ThisWorkbook.SlicerCaches
-        ' Check if the SlicerCache has a slicer with the desired caption
-        If sc.Name = slicerName Then
-            Set slicerCache = sc
-            Exit For
-        End If
-    Next sc
-    
-    ' If the exact SlicerCache name is not known, alternatively:
-    ' Uncomment the following block to find the SlicerCache by slicer name
-    '
-    ' For Each sc In ThisWorkbook.SlicerCaches
-    '     Dim slicer As Slicer
-    '     For Each slicer In sc.Slicers
-    '         If slicer.Caption = slicerCaption Then
-    '             Set slicerCache = sc
-    '             Exit For
-    '         End If
-    '     Next slicer
-    '     If Not slicerCache Is Nothing Then Exit For
-    ' Next sc
-    
-    If slicerCache Is Nothing Then
-        MsgBox "Slicer '" & slicerCaption & "' not found.", vbCritical
-        Exit Sub
+    ' Ensure the chart has a pivot table associated with it
+    If Not pvtChart.Chart.PivotLayout Is Nothing Then
+        ' Get the PivotTable associated with the PivotChart
+        Set pvtTable = pvtChart.Chart.PivotLayout.PivotTable
+        
+        ' Create a slicer for the "Sector/Focus" field
+        Set slicerCache = ThisWorkbook.SlicerCaches.Add(pvtTable, "Sector/Focus")
+        
+        ' Add the slicer to the "Dashboard" sheet
+        slicerCache.Slicers.Add ws, , "Sector/Focus", "Sector/Focus", 100, 100, 200, 200
+        
+    Else
+        MsgBox "The chart 'WeightByIndustry' does not have a PivotTable associated with it.", vbExclamation
     End If
-    
-    ' Optional: Remove existing slicer on Dashboard to avoid duplicates
-    On Error Resume Next
-    Dim existingSlicer As Slicer
-    Set existingSlicer = slicerCache.Slicers("Dashboard_Sector_Focus") ' Adjust name if necessary
-    If Not existingSlicer Is Nothing Then
-        existingSlicer.Delete
-    End If
-    On Error GoTo ErrHandler
-    
-    ' Determine the position for the new slicer
-    ' Position it to the right of the pasted chart with a 20-point gap
-    targetLeft = pastedChart.Left + pastedChart.Width + 20
-    targetTop = pastedChart.Top
-    
-    ' Add the slicer to the Dashboard sheet
-    slicerCache.Slicers.Add SlicerDestination:=wsDest, _
-                            Name:="Slicer_Sector_Focus_Dashboard", _ ' New name for the slicer
-                            Caption:=slicerCaption, _
-                            Top:=targetTop, _
-                            Left:=targetLeft, _
-                            Width:=150, _       ' Set desired width
-                            Height:=200         ' Set desired height
-    
-    ' Clean up
-    Application.CutCopyMode = False
-    MsgBox "Chart and slicer copied successfully!", vbInformation
-    Exit Sub
-    
-ErrHandler:
-    MsgBox "An error occurred: " & Err.Description, vbCritical
-    Application.CutCopyMode = False
 
 End Sub
