@@ -1,18 +1,120 @@
-=LAMBDA(data, include_headers,
-    LET(
-        headers, IF(include_headers, INDEX(data, 1, 0), ""),
-        data_body, IF(include_headers, DROP(data, 1, 0), data),
-        var_names, IF(include_headers, headers, ""),
-        n, COLUMNS(data_body),
-        cov_matrix, MAKEARRAY(n, n, 
-            LAMBDA(i, j, COVARIANCE.P(INDEX(data_body, 0, i), INDEX(data_body, 0, j)))
-        ),
-        IF(include_headers,
-            VSTACK(
-                HSTACK({" "}, var_names),
-                HSTACK(TRANSPOSE(var_names), cov_matrix)
-            ),
-            cov_matrix
-        )
-    )
-)
+' Module: FileSelector
+
+Option Explicit
+
+' Public variable to store the selected RESP_PM value
+Public SelectedRespPM As String
+
+Sub SelectRespPM()
+    Dim fd As FileDialog
+    Dim selectedFile As String
+    Dim wbSource As Workbook
+    Dim tbl As ListObject
+    Dim ws As Worksheet
+    Dim colRESP_PM As ListColumn
+    Dim uniqueValues As Collection
+    Dim cell As Range
+    Dim respPMValue As Variant
+    Dim prompt As String
+    Dim i As Long
+    Dim userChoice As Variant
+    
+    ' Initialize FileDialog
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    With fd
+        .Title = "Select an Excel File"
+        .Filters.Clear
+        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm; *.xlsb"
+        .AllowMultiSelect = False
+        If .Show <> -1 Then
+            MsgBox "No file selected. Operation cancelled.", vbExclamation
+            Exit Sub
+        End If
+        selectedFile = .SelectedItems(1)
+    End With
+    
+    ' Open the selected workbook in ReadOnly mode
+    On Error Resume Next
+    Set wbSource = Workbooks.Open(Filename:=selectedFile, ReadOnly:=True)
+    If wbSource Is Nothing Then
+        MsgBox "Failed to open the selected file.", vbCritical
+        Exit Sub
+    End If
+    On Error GoTo 0
+    
+    ' Search for the table named "Rel_Dtl"
+    Dim foundTable As Boolean
+    foundTable = False
+    Dim lo As ListObject
+    For Each ws In wbSource.Worksheets
+        For Each lo In ws.ListObjects
+            If lo.Name = "Rel_Dtl" Then
+                Set tbl = lo
+                foundTable = True
+                Exit For
+            End If
+        Next lo
+        If foundTable Then Exit For
+    Next ws
+    
+    If Not foundTable Then
+        MsgBox "Table 'Rel_Dtl' not found in the selected file.", vbCritical
+        wbSource.Close SaveChanges:=False
+        Exit Sub
+    End If
+    
+    ' Check if the "RESP_PM" column exists
+    On Error Resume Next
+    Set colRESP_PM = tbl.ListColumns("RESP_PM")
+    On Error GoTo 0
+    If colRESP_PM Is Nothing Then
+        MsgBox "Column 'RESP_PM' not found in table 'Rel_Dtl'.", vbCritical
+        wbSource.Close SaveChanges:=False
+        Exit Sub
+    End If
+    
+    ' Collect unique values from RESP_PM column
+    Set uniqueValues = New Collection
+    On Error Resume Next ' To handle duplicate keys
+    For Each cell In colRESP_PM.DataBodyRange
+        If Not IsEmpty(cell.Value) Then
+            uniqueValues.Add cell.Value, CStr(cell.Value)
+        End If
+    Next cell
+    On Error GoTo 0
+    
+    If uniqueValues.Count = 0 Then
+        MsgBox "No data found in 'RESP_PM' column.", vbExclamation
+        wbSource.Close SaveChanges:=False
+        Exit Sub
+    End If
+    
+    ' Close the source workbook
+    wbSource.Close SaveChanges:=False
+    
+    ' Create a prompt with the unique values
+    prompt = "Select a RESP_PM value:" & vbCrLf
+    For i = 1 To uniqueValues.Count
+        prompt = prompt & i & ". " & uniqueValues(i) & vbCrLf
+    Next i
+    
+    ' Prompt the user to enter the number corresponding to their choice
+    userChoice = Application.InputBox( _
+        Prompt:=prompt & vbCrLf & "Enter the number of your choice:", _
+        Title:="Select RESP_PM", Type:=1)
+    
+    If userChoice = False Then ' User cancelled
+        MsgBox "No selection made. Operation cancelled.", vbExclamation
+        Exit Sub
+    End If
+    
+    If userChoice < 1 Or userChoice > uniqueValues.Count Then
+        MsgBox "Invalid selection. Operation cancelled.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Assign the selected value to the public variable
+    SelectedRespPM = CStr(uniqueValues(userChoice))
+    
+    MsgBox "You have selected: " & SelectedRespPM, vbInformation
+End Sub
