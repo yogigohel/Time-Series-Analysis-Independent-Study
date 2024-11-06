@@ -103,8 +103,17 @@ Sub SelectRespPM()
         Prompt:=prompt & vbCrLf & "Enter the number of your choice:", _
         Title:="Select RESP_PM", Type:=1)
     
-    If userChoice = False Then ' User cancelled
-        MsgBox "No selection made. Operation cancelled.", vbExclamation
+    ' Check if the user cancelled
+    If VarType(userChoice) = vbBoolean Then
+        If userChoice = False Then
+            MsgBox "No selection made. Operation cancelled.", vbExclamation
+            Exit Sub
+        End If
+    End If
+    
+    ' Validate the input is numeric and within range
+    If Not IsNumeric(userChoice) Then
+        MsgBox "Invalid input. Please enter a number corresponding to your choice.", vbExclamation
         Exit Sub
     End If
     
