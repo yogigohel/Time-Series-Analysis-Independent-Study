@@ -4,8 +4,7 @@ Option Explicit
 Public SelectedRespPM As String
 Public SelectedFilePath As String
 
-' First Macro: Select RESP_PM Value and Store File Path
-Sub SelectRespPM()
+Sub SelectAndImportPMData()
     Dim fd As FileDialog
     Dim selectedFile As String
     Dim wbSource As Workbook
@@ -14,10 +13,12 @@ Sub SelectRespPM()
     Dim colRESP_PM As ListColumn
     Dim uniqueValues As Collection
     Dim cell As Range
-    Dim prompt As String
     Dim i As Long
     Dim frm As UserForm1 ' Replace with your actual UserForm name if different
-
+    Dim wsTarget As Worksheet
+    Dim lo As ListObject
+    Dim rngFiltered As Range
+    
     ' Initialize FileDialog
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
     With fd
@@ -45,7 +46,6 @@ Sub SelectRespPM()
     ' Search for the table named "Rel_Dtl"
     Dim foundTable As Boolean
     foundTable = False
-    Dim lo As ListObject
     For Each ws In wbSource.Worksheets
         For Each lo In ws.ListObjects
             If lo.Name = "Rel_Dtl" Then
@@ -112,55 +112,20 @@ Sub SelectRespPM()
     ' Confirmation message
     MsgBox "You have selected: " & SelectedRespPM, vbInformation, "Selection Confirmed"
 
-    ' Optional: Add additional code here to utilize SelectedRespPM
-End Sub
-
-' Second Macro: Import Data Based on Selected RESP_PM
-Sub ImportPMData()
-    Dim wbSource As Workbook
-    Dim tbl As ListObject
-    Dim wsSource As Worksheet
-    Dim wsTarget As Worksheet
-    Dim colRESP_PM As ListColumn
-    Dim rngFiltered As Range
-    Dim PMValue As String
-    Dim FilePath As String
-    Dim LastRow As Long
-    Dim Header As Range
-
-    ' Check if SelectedRespPM is set
-    If SelectedRespPM = "" Then
-        MsgBox "No RESP_PM value has been selected. Please run the 'SelectRespPM' macro first.", vbExclamation, "Selection Missing"
-        Exit Sub
-    End If
-
-    ' Check if SelectedFilePath is set
-    If SelectedFilePath = "" Then
-        MsgBox "No file has been selected. Please run the 'SelectRespPM' macro first.", vbExclamation, "File Path Missing"
-        Exit Sub
-    End If
-
-    ' Verify that the selected file exists
-    If Dir(SelectedFilePath) = "" Then
-        MsgBox "The selected file does not exist. Please select a valid file.", vbCritical, "File Not Found"
-        Exit Sub
-    End If
-
-    ' Open the selected workbook in ReadOnly mode
+    ' Proceed to import data based on the selected RESP_PM
+    ' Re-open the source workbook to apply filtering
     On Error Resume Next
     Set wbSource = Workbooks.Open(Filename:=SelectedFilePath, ReadOnly:=True)
     If wbSource Is Nothing Then
-        MsgBox "Failed to open the selected file.", vbCritical, "Error"
+        MsgBox "Failed to reopen the selected file for data import.", vbCritical, "Error"
         Exit Sub
     End If
     On Error GoTo 0
 
-    ' Search for the table named "Rel_Dtl"
-    Dim foundTable As Boolean
+    ' Re-locate the Rel_Dtl table
     foundTable = False
-    Dim lo As ListObject
-    For Each wsSource In wbSource.Worksheets
-        For Each lo In wsSource.ListObjects
+    For Each ws In wbSource.Worksheets
+        For Each lo In ws.ListObjects
             If lo.Name = "Rel_Dtl" Then
                 Set tbl = lo
                 foundTable = True
@@ -168,20 +133,20 @@ Sub ImportPMData()
             End If
         Next lo
         If foundTable Then Exit For
-    Next wsSource
+    Next ws
 
     If Not foundTable Then
-        MsgBox "Table 'Rel_Dtl' not found in the selected file.", vbCritical, "Error"
+        MsgBox "Table 'Rel_Dtl' not found in the selected file during data import.", vbCritical, "Error"
         wbSource.Close SaveChanges:=False
         Exit Sub
     End If
 
-    ' Check if the "RESP_PM" column exists
+    ' Check if the "RESP_PM" column exists again
     On Error Resume Next
     Set colRESP_PM = tbl.ListColumns("RESP_PM")
     On Error GoTo 0
     If colRESP_PM Is Nothing Then
-        MsgBox "Column 'RESP_PM' not found in table 'Rel_Dtl'.", vbCritical, "Error"
+        MsgBox "Column 'RESP_PM' not found in table 'Rel_Dtl' during data import.", vbCritical, "Error"
         wbSource.Close SaveChanges:=False
         Exit Sub
     End If
