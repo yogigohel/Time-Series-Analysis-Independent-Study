@@ -1,3 +1,21 @@
+' UserForm1 Code Module
+
+Private Sub btnOK_Click()
+    If cmbRESP_PM.ListIndex <> -1 Then
+        ' Store the selected value in the public variable
+        SelectedRespPM = cmbRESP_PM.Value
+        Me.Hide ' Close the UserForm
+    Else
+        MsgBox "Please select a RESP_PM value.", vbExclamation, "Selection Required"
+    End If
+End Sub
+
+Private Sub btnCancel_Click()
+    SelectedRespPM = "" ' Clear any previous selection
+    Me.Hide ' Close the UserForm
+End Sub
+
+
 Option Explicit
 
 ' Public variables to store selected RESP_PM value and file path
@@ -14,15 +32,15 @@ Sub SelectAndImportPMData()
     Dim uniqueValues As Collection
     Dim cell As Range
     Dim i As Long
-    Dim frm As UserForm1 ' Replace with your actual UserForm name if different
+    Dim frm As UserForm1 ' Ensure this matches your UserForm's name
     Dim wsTarget As Worksheet
     Dim lo As ListObject
     Dim rngFiltered As Range
     
-    ' Initialize FileDialog
+    ' Initialize FileDialog for file selection
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
     With fd
-        .Title = "Select an Excel File"
+        .Title = "Select an Excel File Containing 'Rel_Dtl' Table"
         .Filters.Clear
         .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm; *.xlsb"
         .AllowMultiSelect = False
@@ -93,7 +111,7 @@ Sub SelectAndImportPMData()
     wbSource.Close SaveChanges:=False
 
     ' Initialize and populate the UserForm
-    Set frm = New UserForm1 ' Replace with your actual UserForm name if different
+    Set frm = New UserForm1 ' Ensure this matches your UserForm's name
     With frm
         .cmbRESP_PM.Clear
         For i = 1 To uniqueValues.Count
@@ -109,11 +127,8 @@ Sub SelectAndImportPMData()
         Exit Sub
     End If
 
-    ' Confirmation message
-    MsgBox "You have selected: " & SelectedRespPM, vbInformation, "Selection Confirmed"
-
     ' Proceed to import data based on the selected RESP_PM
-    ' Re-open the source workbook to apply filtering
+    ' Open the source workbook again to apply filtering
     On Error Resume Next
     Set wbSource = Workbooks.Open(Filename:=SelectedFilePath, ReadOnly:=True)
     If wbSource Is Nothing Then
@@ -154,16 +169,25 @@ Sub SelectAndImportPMData()
     ' Apply AutoFilter to filter rows with SelectedRespPM
     With tbl.Range
         .AutoFilter Field:=colRESP_PM.Index, Criteria1:=SelectedRespPM
-        ' Check if any visible rows other than header exist
-        On Error Resume Next
-        Set rngFiltered = .SpecialCells(xlCellTypeVisible)
-        On Error GoTo 0
     End With
 
+    ' Check if any data is visible after filtering (excluding header)
+    On Error Resume Next
+    Set rngFiltered = tbl.Range.SpecialCells(xlCellTypeVisible)
+    On Error GoTo 0
+
+    ' Ensure that there are visible cells beyond the header
     If rngFiltered Is Nothing Then
         MsgBox "No data found for RESP_PM = " & SelectedRespPM & ".", vbInformation, "No Matching Data"
         wbSource.Close SaveChanges:=False
         Exit Sub
+    Else
+        ' Check if only header is visible
+        If rngFiltered.Areas(1).Rows.Count <= 1 Then
+            MsgBox "No data found for RESP_PM = " & SelectedRespPM & ".", vbInformation, "No Matching Data"
+            wbSource.Close SaveChanges:=False
+            Exit Sub
+        End If
     End If
 
     ' Create or clear the "PM Data" worksheet in the current workbook
@@ -181,10 +205,8 @@ Sub SelectAndImportPMData()
     End If
 
     ' Copy the filtered data (including headers) to "PM Data"
-    With tbl.Range
-        .AutoFilter Field:=colRESP_PM.Index, Criteria1:=SelectedRespPM
-        .Copy Destination:=wsTarget.Range("A1")
-    End With
+    ' Use SpecialCells to copy only visible cells
+    tbl.Range.SpecialCells(xlCellTypeVisible).Copy Destination:=wsTarget.Range("A1")
 
     ' Optional: Adjust column widths for better readability
     wsTarget.Columns.AutoFit
