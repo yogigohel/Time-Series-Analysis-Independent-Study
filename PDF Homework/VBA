@@ -3,7 +3,7 @@
 Private Sub btnOK_Click()
     If cmbRESP_PM.ListIndex <> -1 Then
         ' Store the selected value in the public variable
-        SelectedRespPM = cmbRESP_PM.Value
+        SelectedRespPM = Trim(cmbRESP_PM.Value)
         Me.Hide ' Close the UserForm
     Else
         MsgBox "Please select a RESP_PM value.", vbExclamation, "Selection Required"
@@ -14,7 +14,6 @@ Private Sub btnCancel_Click()
     SelectedRespPM = "" ' Clear any previous selection
     Me.Hide ' Close the UserForm
 End Sub
-
 
 Option Explicit
 
@@ -36,6 +35,13 @@ Sub SelectAndImportPMData()
     Dim wsTarget As Worksheet
     Dim lo As ListObject
     Dim rngFiltered As Range
+    Dim foundTable As Boolean
+    
+    On Error GoTo ErrorHandler
+    
+    ' Optimize performance
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
     
     ' Initialize FileDialog for file selection
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
@@ -46,23 +52,16 @@ Sub SelectAndImportPMData()
         .AllowMultiSelect = False
         If .Show <> -1 Then
             MsgBox "No file selected. Operation cancelled.", vbExclamation, "Cancelled"
-            Exit Sub
+            GoTo Cleanup
         End If
         selectedFile = .SelectedItems(1)
         SelectedFilePath = selectedFile ' Store the selected file path
     End With
 
     ' Open the selected workbook in ReadOnly mode
-    On Error Resume Next
-    Set wbSource = Workbooks.Open(Filename:=selectedFile, ReadOnly:=True)
-    If wbSource Is Nothing Then
-        MsgBox "Failed to open the selected file.", vbCritical, "Error"
-        Exit Sub
-    End If
-    On Error GoTo 0
-
+    Set wbSource = Workbooks.Open(Filename:=SelectedFilePath, ReadOnly:=True)
+    
     ' Search for the table named "Rel_Dtl"
-    Dim foundTable As Boolean
     foundTable = False
     For Each ws In wbSource.Worksheets
         For Each lo In ws.ListObjects
@@ -74,42 +73,40 @@ Sub SelectAndImportPMData()
         Next lo
         If foundTable Then Exit For
     Next ws
-
+    
     If Not foundTable Then
         MsgBox "Table 'Rel_Dtl' not found in the selected file.", vbCritical, "Error"
         wbSource.Close SaveChanges:=False
-        Exit Sub
+        GoTo Cleanup
     End If
-
+    
     ' Check if the "RESP_PM" column exists
-    On Error Resume Next
     Set colRESP_PM = tbl.ListColumns("RESP_PM")
-    On Error GoTo 0
     If colRESP_PM Is Nothing Then
         MsgBox "Column 'RESP_PM' not found in table 'Rel_Dtl'.", vbCritical, "Error"
         wbSource.Close SaveChanges:=False
-        Exit Sub
+        GoTo Cleanup
     End If
-
+    
     ' Collect unique values from RESP_PM column
     Set uniqueValues = New Collection
     On Error Resume Next ' To handle duplicate keys
     For Each cell In colRESP_PM.DataBodyRange
         If Not IsEmpty(cell.Value) Then
-            uniqueValues.Add cell.Value, CStr(cell.Value)
+            uniqueValues.Add Trim(cell.Value), CStr(Trim(cell.Value))
         End If
     Next cell
     On Error GoTo 0
-
+    
     If uniqueValues.Count = 0 Then
         MsgBox "No data found in 'RESP_PM' column.", vbExclamation, "No Data"
         wbSource.Close SaveChanges:=False
-        Exit Sub
+        GoTo Cleanup
     End If
-
+    
     ' Close the source workbook
     wbSource.Close SaveChanges:=False
-
+    
     ' Initialize and populate the UserForm
     Set frm = New UserForm1 ' Ensure this matches your UserForm's name
     With frm
@@ -117,26 +114,19 @@ Sub SelectAndImportPMData()
         For i = 1 To uniqueValues.Count
             .cmbRESP_PM.AddItem uniqueValues(i)
         Next i
-        .cmbRESP_PM.ListIndex = 0 ' Optional: Select the first item by default
+        .cmbRESP_PM.ListIndex = -1 ' No default selection
         .Show vbModal
     End With
-
+    
     ' Check if a selection was made
     If SelectedRespPM = "" Then
         MsgBox "No RESP_PM value was selected. Operation cancelled.", vbExclamation, "Cancelled"
-        Exit Sub
+        GoTo Cleanup
     End If
-
-    ' Proceed to import data based on the selected RESP_PM
-    ' Open the source workbook again to apply filtering
-    On Error Resume Next
+    
+    ' Re-open the source workbook to apply filtering
     Set wbSource = Workbooks.Open(Filename:=SelectedFilePath, ReadOnly:=True)
-    If wbSource Is Nothing Then
-        MsgBox "Failed to reopen the selected file for data import.", vbCritical, "Error"
-        Exit Sub
-    End If
-    On Error GoTo 0
-
+    
     ' Re-locate the Rel_Dtl table
     foundTable = False
     For Each ws In wbSource.Worksheets
@@ -149,52 +139,46 @@ Sub SelectAndImportPMData()
         Next lo
         If foundTable Then Exit For
     Next ws
-
+    
     If Not foundTable Then
         MsgBox "Table 'Rel_Dtl' not found in the selected file during data import.", vbCritical, "Error"
         wbSource.Close SaveChanges:=False
-        Exit Sub
+        GoTo Cleanup
     End If
-
+    
     ' Check if the "RESP_PM" column exists again
-    On Error Resume Next
     Set colRESP_PM = tbl.ListColumns("RESP_PM")
-    On Error GoTo 0
     If colRESP_PM Is Nothing Then
         MsgBox "Column 'RESP_PM' not found in table 'Rel_Dtl' during data import.", vbCritical, "Error"
         wbSource.Close SaveChanges:=False
-        Exit Sub
+        GoTo Cleanup
     End If
-
+    
+    ' Remove any existing filters to avoid conflicts
+    If tbl.AutoFilter.FilterMode Then
+        tbl.AutoFilter.ShowAllData
+    End If
+    
     ' Apply AutoFilter to filter rows with SelectedRespPM
-    With tbl.Range
-        .AutoFilter Field:=colRESP_PM.Index, Criteria1:=SelectedRespPM
-    End With
-
+    tbl.Range.AutoFilter Field:=colRESP_PM.Index, Criteria1:=SelectedRespPM
+    
     ' Check if any data is visible after filtering (excluding header)
     On Error Resume Next
-    Set rngFiltered = tbl.Range.SpecialCells(xlCellTypeVisible)
+    Set rngFiltered = tbl.DataBodyRange.SpecialCells(xlCellTypeVisible)
     On Error GoTo 0
-
-    ' Ensure that there are visible cells beyond the header
+    
     If rngFiltered Is Nothing Then
-        MsgBox "No data found for RESP_PM = " & SelectedRespPM & ".", vbInformation, "No Matching Data"
+        MsgBox "No data found for RESP_PM = '" & SelectedRespPM & "'.", vbInformation, "No Matching Data"
+        tbl.AutoFilter.ShowAllData
         wbSource.Close SaveChanges:=False
-        Exit Sub
-    Else
-        ' Check if only header is visible
-        If rngFiltered.Areas(1).Rows.Count <= 1 Then
-            MsgBox "No data found for RESP_PM = " & SelectedRespPM & ".", vbInformation, "No Matching Data"
-            wbSource.Close SaveChanges:=False
-            Exit Sub
-        End If
+        GoTo Cleanup
     End If
-
+    
     ' Create or clear the "PM Data" worksheet in the current workbook
     On Error Resume Next
     Set wsTarget = ThisWorkbook.Worksheets("PM Data")
     On Error GoTo 0
-
+    
     If wsTarget Is Nothing Then
         ' Add the worksheet if it doesn't exist
         Set wsTarget = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
@@ -203,19 +187,35 @@ Sub SelectAndImportPMData()
         ' Clear existing data
         wsTarget.Cells.Clear
     End If
-
-    ' Copy the filtered data (including headers) to "PM Data"
-    ' Use SpecialCells to copy only visible cells
-    tbl.Range.SpecialCells(xlCellTypeVisible).Copy Destination:=wsTarget.Range("A1")
-
+    
+    ' Copy the headers
+    tbl.HeaderRowRange.Copy Destination:=wsTarget.Range("A1")
+    
+    ' Copy the filtered data
+    rngFiltered.Copy Destination:=wsTarget.Range("A2")
+    
     ' Optional: Adjust column widths for better readability
     wsTarget.Columns.AutoFit
-
+    
     ' Remove AutoFilter
     tbl.AutoFilter.ShowAllData
-
+    
     ' Close the source workbook
     wbSource.Close SaveChanges:=False
-
-    MsgBox "Data for RESP_PM = " & SelectedRespPM & " has been successfully imported to the 'PM Data' sheet.", vbInformation, "Import Successful"
+    
+    ' Confirmation message
+    MsgBox "Data for RESP_PM = '" & SelectedRespPM & "' has been successfully imported to the 'PM Data' sheet.", vbInformation, "Import Successful"
+    
+Cleanup:
+    ' Restore application settings
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "An unexpected error occurred: " & Err.Description, vbCritical, "Error"
+    If Not wbSource Is Nothing Then
+        wbSource.Close SaveChanges:=False
+    End If
+    Resume Cleanup
 End Sub
