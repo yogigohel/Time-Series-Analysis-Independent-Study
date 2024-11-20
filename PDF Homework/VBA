@@ -1,221 +1,137 @@
-' UserForm1 Code Module
+Here’s a step-by-step guide to implement this, including instructions for creating a visually appealing UserForm:
 
-Private Sub btnOK_Click()
-    If cmbRESP_PM.ListIndex <> -1 Then
-        ' Store the selected value in the public variable
-        SelectedRespPM = Trim(cmbRESP_PM.Value)
-        Me.Hide ' Close the UserForm
-    Else
-        MsgBox "Please select a RESP_PM value.", vbExclamation, "Selection Required"
-    End If
-End Sub
+Step 1: Open the VBA Editor
 
-Private Sub btnCancel_Click()
-    SelectedRespPM = "" ' Clear any previous selection
-    Me.Hide ' Close the UserForm
-End Sub
+	1.	Open your Excel workbook.
+	2.	Press Alt + F11 to open the VBA Editor.
 
-Option Explicit
+Step 2: Create a New UserForm
 
-' Public variables to store selected RESP_PM value and file path
-Public SelectedRespPM As String
-Public SelectedFilePath As String
+	1.	In the Project Explorer (on the left pane of the VBA Editor), right-click on the project name (your workbook’s name) and select Insert > UserForm.
+	2.	A blank UserForm will appear.
 
-Sub SelectAndImportPMData()
+Step 3: Design the UserForm
+
+	1.	Resize the Form:
+	•	Click and drag the corners of the UserForm to make it large enough to display instructions and buttons (e.g., ~300px width and ~200px height).
+	2.	Add Labels:
+	•	From the Toolbox (if it’s not visible, go to View > Toolbox), drag two Label controls onto the form.
+	•	Set their captions:
+	•	Label 1: “Select Holdings File:”
+	•	Label 2: “Select Relationships File:”
+	•	Arrange them neatly at the top.
+	3.	Add Buttons for Browsing Files:
+	•	Drag two CommandButton controls onto the form and place them next to each label.
+	•	Set their captions:
+	•	Button 1: “Browse…”
+	•	Button 2: “Browse…”
+	•	Rename the buttons in the properties window (press F4 if the properties window isn’t visible):
+	•	Button 1: btnHoldings
+	•	Button 2: btnRelationships.
+	4.	Add a Submit Button:
+	•	Drag another CommandButton below the previous buttons.
+	•	Set its caption to “Submit”.
+	•	Rename it: btnSubmit.
+	5.	Enhance Aesthetics:
+	•	Select the UserForm itself (click anywhere blank on the form).
+	•	In the Properties window:
+	•	Set BackColor to a light pastel shade (e.g., light blue or gray).
+	•	Set Caption to “File Import Wizard”.
+	•	For each label:
+	•	Set Font to a larger size (e.g., 11) and a modern style (like Calibri or Segoe UI).
+	•	For buttons:
+	•	Set Font to match the labels and adjust size (e.g., 10).
+	•	Add a company logo or an image (optional):
+	•	Use the Image control from the toolbox to add an image to the form.
+
+Step 4: Add Code for File Selection
+
+	1.	Double-click the “Browse…” button for Holdings (btnHoldings) to open the code editor for that button.
+	2.	Paste the following code:
+
+Private Sub btnHoldings_Click()
     Dim fd As FileDialog
-    Dim selectedFile As String
-    Dim wbSource As Workbook
-    Dim tbl As ListObject
-    Dim ws As Worksheet
-    Dim colRESP_PM As ListColumn
-    Dim uniqueValues As Collection
-    Dim cell As Range
-    Dim i As Long
-    Dim frm As UserForm1 ' Ensure this matches your UserForm's name
-    Dim wsTarget As Worksheet
-    Dim lo As ListObject
-    Dim rngFiltered As Range
-    Dim foundTable As Boolean
-    
-    On Error GoTo ErrorHandler
-    
-    ' Optimize performance
-    Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
-    
-    ' Initialize FileDialog for file selection
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
     With fd
-        .Title = "Select an Excel File Containing 'Rel_Dtl' Table"
-        .Filters.Clear
-        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm; *.xlsb"
-        .AllowMultiSelect = False
-        If .Show <> -1 Then
-            MsgBox "No file selected. Operation cancelled.", vbExclamation, "Cancelled"
-            GoTo Cleanup
+        .Title = "Select Holdings File"
+        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm", 1
+        If .Show = -1 Then
+            MsgBox "Holdings file selected: " & .SelectedItems(1), vbInformation
+            HoldingsFile = .SelectedItems(1)
         End If
-        selectedFile = .SelectedItems(1)
-        SelectedFilePath = selectedFile ' Store the selected file path
     End With
-
-    ' Open the selected workbook in ReadOnly mode
-    Set wbSource = Workbooks.Open(Filename:=SelectedFilePath, ReadOnly:=True)
-    
-    ' Search for the table named "Rel_Dtl"
-    foundTable = False
-    For Each ws In wbSource.Worksheets
-        For Each lo In ws.ListObjects
-            If lo.Name = "Rel_Dtl" Then
-                Set tbl = lo
-                foundTable = True
-                Exit For
-            End If
-        Next lo
-        If foundTable Then Exit For
-    Next ws
-    
-    If Not foundTable Then
-        MsgBox "Table 'Rel_Dtl' not found in the selected file.", vbCritical, "Error"
-        wbSource.Close SaveChanges:=False
-        GoTo Cleanup
-    End If
-    
-    ' Check if the "RESP_PM" column exists
-    Set colRESP_PM = tbl.ListColumns("RESP_PM")
-    If colRESP_PM Is Nothing Then
-        MsgBox "Column 'RESP_PM' not found in table 'Rel_Dtl'.", vbCritical, "Error"
-        wbSource.Close SaveChanges:=False
-        GoTo Cleanup
-    End If
-    
-    ' Collect unique values from RESP_PM column
-    Set uniqueValues = New Collection
-    On Error Resume Next ' To handle duplicate keys
-    For Each cell In colRESP_PM.DataBodyRange
-        If Not IsEmpty(cell.Value) Then
-            uniqueValues.Add Trim(cell.Value), CStr(Trim(cell.Value))
-        End If
-    Next cell
-    On Error GoTo 0
-    
-    If uniqueValues.Count = 0 Then
-        MsgBox "No data found in 'RESP_PM' column.", vbExclamation, "No Data"
-        wbSource.Close SaveChanges:=False
-        GoTo Cleanup
-    End If
-    
-    ' Close the source workbook
-    wbSource.Close SaveChanges:=False
-    
-    ' Initialize and populate the UserForm
-    Set frm = New UserForm1 ' Ensure this matches your UserForm's name
-    With frm
-        .cmbRESP_PM.Clear
-        For i = 1 To uniqueValues.Count
-            .cmbRESP_PM.AddItem uniqueValues(i)
-        Next i
-        .cmbRESP_PM.ListIndex = -1 ' No default selection
-        .Show vbModal
-    End With
-    
-    ' Check if a selection was made
-    If SelectedRespPM = "" Then
-        MsgBox "No RESP_PM value was selected. Operation cancelled.", vbExclamation, "Cancelled"
-        GoTo Cleanup
-    End If
-    
-    ' Re-open the source workbook to apply filtering
-    Set wbSource = Workbooks.Open(Filename:=SelectedFilePath, ReadOnly:=True)
-    
-    ' Re-locate the Rel_Dtl table
-    foundTable = False
-    For Each ws In wbSource.Worksheets
-        For Each lo In ws.ListObjects
-            If lo.Name = "Rel_Dtl" Then
-                Set tbl = lo
-                foundTable = True
-                Exit For
-            End If
-        Next lo
-        If foundTable Then Exit For
-    Next ws
-    
-    If Not foundTable Then
-        MsgBox "Table 'Rel_Dtl' not found in the selected file during data import.", vbCritical, "Error"
-        wbSource.Close SaveChanges:=False
-        GoTo Cleanup
-    End If
-    
-    ' Check if the "RESP_PM" column exists again
-    Set colRESP_PM = tbl.ListColumns("RESP_PM")
-    If colRESP_PM Is Nothing Then
-        MsgBox "Column 'RESP_PM' not found in table 'Rel_Dtl' during data import.", vbCritical, "Error"
-        wbSource.Close SaveChanges:=False
-        GoTo Cleanup
-    End If
-    
-    ' Remove any existing filters to avoid conflicts
-    If tbl.AutoFilter.FilterMode Then
-        tbl.AutoFilter.ShowAllData
-    End If
-    
-    ' Apply AutoFilter to filter rows with SelectedRespPM
-    tbl.Range.AutoFilter Field:=colRESP_PM.Index, Criteria1:=SelectedRespPM
-    
-    ' Check if any data is visible after filtering (excluding header)
-    On Error Resume Next
-    Set rngFiltered = tbl.DataBodyRange.SpecialCells(xlCellTypeVisible)
-    On Error GoTo 0
-    
-    If rngFiltered Is Nothing Then
-        MsgBox "No data found for RESP_PM = '" & SelectedRespPM & "'.", vbInformation, "No Matching Data"
-        tbl.AutoFilter.ShowAllData
-        wbSource.Close SaveChanges:=False
-        GoTo Cleanup
-    End If
-    
-    ' Create or clear the "PM Data" worksheet in the current workbook
-    On Error Resume Next
-    Set wsTarget = ThisWorkbook.Worksheets("PM Data")
-    On Error GoTo 0
-    
-    If wsTarget Is Nothing Then
-        ' Add the worksheet if it doesn't exist
-        Set wsTarget = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
-        wsTarget.Name = "PM Data"
-    Else
-        ' Clear existing data
-        wsTarget.Cells.Clear
-    End If
-    
-    ' Copy the headers
-    tbl.HeaderRowRange.Copy Destination:=wsTarget.Range("A1")
-    
-    ' Copy the filtered data
-    rngFiltered.Copy Destination:=wsTarget.Range("A2")
-    
-    ' Optional: Adjust column widths for better readability
-    wsTarget.Columns.AutoFit
-    
-    ' Remove AutoFilter
-    tbl.AutoFilter.ShowAllData
-    
-    ' Close the source workbook
-    wbSource.Close SaveChanges:=False
-    
-    ' Confirmation message
-    MsgBox "Data for RESP_PM = '" & SelectedRespPM & "' has been successfully imported to the 'PM Data' sheet.", vbInformation, "Import Successful"
-    
-Cleanup:
-    ' Restore application settings
-    Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "An unexpected error occurred: " & Err.Description, vbCritical, "Error"
-    If Not wbSource Is Nothing Then
-        wbSource.Close SaveChanges:=False
-    End If
-    Resume Cleanup
 End Sub
+
+
+	3.	Repeat for the “Browse…” button for Relationships (btnRelationships) and replace "Holdings File" with "Relationships File".
+
+Step 5: Add Code for Submit Button
+
+	1.	Double-click the “Submit” button (btnSubmit) to open its code editor.
+	2.	Paste the following:
+
+Private Sub btnSubmit_Click()
+    If HoldingsFile = "" Or RelationshipsFile = "" Then
+        MsgBox "Please select both files before submitting.", vbExclamation
+        Exit Sub
+    End If
+
+    ' Import sheets
+    Call ImportSheets(HoldingsFile)
+    Call ImportSheets(RelationshipsFile)
+
+    MsgBox "Sheets imported successfully!", vbInformation
+    Unload Me
+End Sub
+
+Step 6: Add Sheet Import Logic
+
+	1.	In the Project Explorer, double-click ThisWorkbook under your project.
+	2.	Add this helper function:
+
+Private Sub ImportSheets(filePath As String)
+    Dim wbSource As Workbook
+    Dim ws As Worksheet
+    
+    Application.ScreenUpdating = False
+    Set wbSource = Workbooks.Open(filePath)
+    
+    For Each ws In wbSource.Sheets
+        ws.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    Next ws
+    
+    wbSource.Close SaveChanges:=False
+    Application.ScreenUpdating = True
+End Sub
+
+Step 7: Display UserForm on Workbook Open
+
+	1.	In the Project Explorer, double-click ThisWorkbook.
+	2.	Add the following code:
+
+Private Sub Workbook_Open()
+    UserForm1.Show
+End Sub
+
+Step 8: Save and Test
+
+	1.	Save the workbook as a Macro-Enabled Workbook (*.xlsm).
+	2.	Close and reopen the workbook to test.
+	•	The UserForm should automatically appear.
+	•	You should be able to browse and select files, and the sheets from those files should be imported.
+
+Additional Tips for Aesthetic Improvements
+
+	1.	Add Icons to Buttons:
+	•	Use small icons for the “Browse” and “Submit” buttons.
+	•	Add an Image control to the form and set the Picture property.
+	2.	Alignment:
+	•	Align all controls using the “Format” menu in the VBA Editor (Format > Align).
+	3.	Progress Feedback:
+	•	Add a progress bar (optional) or a message indicating successful completion.
+	4.	Colors:
+	•	Use consistent colors for buttons, background, and text to match your theme.
+	5.	Logo or Branding:
+	•	Add your company’s logo or a header to the form.
+
+Let me know if you’d like help with any specific customization or advanced features!
