@@ -1,137 +1,195 @@
-Here’s a step-by-step guide to implement this, including instructions for creating a visually appealing UserForm:
+' In a Class Module named "FileImporterState"
+Option Explicit
 
-Step 1: Open the VBA Editor
+Public HoldingsFile As String
+Public RelationshipsFile As String
 
-	1.	Open your Excel workbook.
-	2.	Press Alt + F11 to open the VBA Editor.
+' In UserForm named "fileImporter"
+Option Explicit
 
-Step 2: Create a New UserForm
+Private State As FileImporterState
 
-	1.	In the Project Explorer (on the left pane of the VBA Editor), right-click on the project name (your workbook’s name) and select Insert > UserForm.
-	2.	A blank UserForm will appear.
-
-Step 3: Design the UserForm
-
-	1.	Resize the Form:
-	•	Click and drag the corners of the UserForm to make it large enough to display instructions and buttons (e.g., ~300px width and ~200px height).
-	2.	Add Labels:
-	•	From the Toolbox (if it’s not visible, go to View > Toolbox), drag two Label controls onto the form.
-	•	Set their captions:
-	•	Label 1: “Select Holdings File:”
-	•	Label 2: “Select Relationships File:”
-	•	Arrange them neatly at the top.
-	3.	Add Buttons for Browsing Files:
-	•	Drag two CommandButton controls onto the form and place them next to each label.
-	•	Set their captions:
-	•	Button 1: “Browse…”
-	•	Button 2: “Browse…”
-	•	Rename the buttons in the properties window (press F4 if the properties window isn’t visible):
-	•	Button 1: btnHoldings
-	•	Button 2: btnRelationships.
-	4.	Add a Submit Button:
-	•	Drag another CommandButton below the previous buttons.
-	•	Set its caption to “Submit”.
-	•	Rename it: btnSubmit.
-	5.	Enhance Aesthetics:
-	•	Select the UserForm itself (click anywhere blank on the form).
-	•	In the Properties window:
-	•	Set BackColor to a light pastel shade (e.g., light blue or gray).
-	•	Set Caption to “File Import Wizard”.
-	•	For each label:
-	•	Set Font to a larger size (e.g., 11) and a modern style (like Calibri or Segoe UI).
-	•	For buttons:
-	•	Set Font to match the labels and adjust size (e.g., 10).
-	•	Add a company logo or an image (optional):
-	•	Use the Image control from the toolbox to add an image to the form.
-
-Step 4: Add Code for File Selection
-
-	1.	Double-click the “Browse…” button for Holdings (btnHoldings) to open the code editor for that button.
-	2.	Paste the following code:
+Private Sub UserForm_Initialize()
+    Set State = New FileImporterState
+End Sub
 
 Private Sub btnHoldings_Click()
     Dim fd As FileDialog
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    
     With fd
         .Title = "Select Holdings File"
+        .Filters.Clear
         .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm", 1
+        .AllowMultiSelect = False
+        
         If .Show = -1 Then
-            MsgBox "Holdings file selected: " & .SelectedItems(1), vbInformation
-            HoldingsFile = .SelectedItems(1)
+            State.HoldingsFile = .SelectedItems(1)
+            lblHoldingsPath.Caption = State.HoldingsFile
         End If
     End With
 End Sub
 
-
-	3.	Repeat for the “Browse…” button for Relationships (btnRelationships) and replace "Holdings File" with "Relationships File".
-
-Step 5: Add Code for Submit Button
-
-	1.	Double-click the “Submit” button (btnSubmit) to open its code editor.
-	2.	Paste the following:
+Private Sub btnRelationships_Click()
+    Dim fd As FileDialog
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    
+    With fd
+        .Title = "Select Relationships File"
+        .Filters.Clear
+        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm", 1
+        .AllowMultiSelect = False
+        
+        If .Show = -1 Then
+            State.RelationshipsFile = .SelectedItems(1)
+            lblRelationshipsPath.Caption = State.RelationshipsFile
+        End If
+    End With
+End Sub
 
 Private Sub btnSubmit_Click()
-    If HoldingsFile = "" Or RelationshipsFile = "" Then
+    If State.HoldingsFile = "" Or State.RelationshipsFile = "" Then
         MsgBox "Please select both files before submitting.", vbExclamation
         Exit Sub
     End If
-
-    ' Import sheets
-    Call ImportSheets(HoldingsFile)
-    Call ImportSheets(RelationshipsFile)
-
-    MsgBox "Sheets imported successfully!", vbInformation
+    
+    On Error GoTo ErrorHandler
+    
+    ' Disable screen updating and alerts
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    ' Import and process sheets
+    Call ImportAndProcessSheets(State.HoldingsFile, State.RelationshipsFile)
+    
+    ' Enable screen updating and alerts
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    
+    MsgBox "Processing completed successfully!", vbInformation
     Unload Me
+    Exit Sub
+
+ErrorHandler:
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    MsgBox "An error occurred: " & Err.Description, vbCritical
+    Err.Clear
 End Sub
 
-Step 6: Add Sheet Import Logic
+' In a Module named "DataProcessor"
+Option Explicit
 
-	1.	In the Project Explorer, double-click ThisWorkbook under your project.
-	2.	Add this helper function:
+Public Sub ImportAndProcessSheets(HoldingsFile As String, RelationshipsFile As String)
+    ' Import Holdings
+    Dim holdingsWs As Worksheet
+    Set holdingsWs = ImportSheet(HoldingsFile)
+    
+    ' Import Relationships
+    Dim relationshipsWs As Worksheet
+    Set relationshipsWs = ImportSheet(RelationshipsFile)
+    
+    ' Convert to tables
+    CreateTable holdingsWs, "Holdings"
+    CreateTable relationshipsWs, "Relationships"
+    
+    ' Process Relationships table
+    ProcessRelationshipsTable relationshipsWs
+End Sub
 
-Private Sub ImportSheets(filePath As String)
+Private Function ImportSheet(filePath As String) As Worksheet
     Dim wbSource As Workbook
     Dim ws As Worksheet
     
-    Application.ScreenUpdating = False
     Set wbSource = Workbooks.Open(filePath)
-    
-    For Each ws In wbSource.Sheets
-        ws.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
-    Next ws
-    
+    Set ws = wbSource.Sheets(1)
+    ws.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    Set ImportSheet = ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
     wbSource.Close SaveChanges:=False
-    Application.ScreenUpdating = True
+End Function
+
+Private Sub CreateTable(ws As Worksheet, tableName As String)
+    Dim rng As Range
+    Set rng = ws.UsedRange
+    
+    ' Delete existing table if it exists
+    On Error Resume Next
+    ThisWorkbook.Tables(tableName).Delete
+    On Error GoTo 0
+    
+    ' Create new table
+    ws.ListObjects.Add(xlSrcRange, rng, , xlYes).Name = tableName
 End Sub
 
-Step 7: Display UserForm on Workbook Open
+Private Sub ProcessRelationshipsTable(ws As Worksheet)
+    Dim tbl As ListObject
+    Set tbl = ws.ListObjects("Relationships")
+    
+    ' Move Master Account Name to third position
+    MoveColumn tbl, "Master Account Name", 3
+    
+    ' Add Unrealized Short Term Losses column
+    AddUnrealizedLossesColumn tbl, "Unrealized Short Term Losses", "Unrealized ShortTerm Gain/Loss"
+    
+    ' Add Unrealized Long Term Losses column
+    AddUnrealizedLossesColumn tbl, "Unrealized Long Term Losses", "Unrealized LongTerm Gain/Loss"
+    
+    ' Add Total Unrealized Losses column
+    AddTotalUnrealizedLossesColumn tbl
+    
+    ' Add Unrealized Losses MA column
+    AddMasterAccountSumColumn tbl, "Unrealized Losses MA", "Total Unrealized Losses"
+    
+    ' Add Realized Gain/Loss column
+    AddRealizedGainLossColumn tbl
+    
+    ' Add Realized Gain/Loss MA column
+    AddMasterAccountSumColumn tbl, "Realized Gain/Loss MA", "Realized Gain/Loss"
+End Sub
 
-	1.	In the Project Explorer, double-click ThisWorkbook.
-	2.	Add the following code:
+Private Sub MoveColumn(tbl As ListObject, columnName As String, newPosition As Long)
+    Dim oldPosition As Long
+    oldPosition = tbl.ListColumns(columnName).Index
+    tbl.ListColumns(columnName).Range.Cut
+    tbl.ListColumns(newPosition).Range.Insert Shift:=xlToRight
+End Sub
 
+Private Sub AddUnrealizedLossesColumn(tbl As ListObject, newColumnName As String, sourceColumnName As String)
+    With tbl.ListColumns.Add
+        .Name = newColumnName
+        .DataBodyRange.FormulaR1C1 = _
+            "=SUMIFS(Holdings[" & sourceColumnName & "]," & _
+            "Holdings[Account#],[@[Account#]]," & _
+            "Holdings[" & sourceColumnName & "],""<0"")"
+    End With
+End Sub
+
+Private Sub AddTotalUnrealizedLossesColumn(tbl As ListObject)
+    With tbl.ListColumns.Add
+        .Name = "Total Unrealized Losses"
+        .DataBodyRange.FormulaR1C1 = _
+            "=[@[Unrealized Short Term Losses]]+[@[Unrealized Long Term Losses]]"
+    End With
+End Sub
+
+Private Sub AddMasterAccountSumColumn(tbl As ListObject, newColumnName As String, sourceColumnName As String)
+    With tbl.ListColumns.Add
+        .Name = newColumnName
+        .DataBodyRange.FormulaR1C1 = _
+            "=SUMIF(Relationships[Master Account Name],[@[Master Account Name]]," & _
+            "Relationships[" & sourceColumnName & "])"
+    End With
+End Sub
+
+Private Sub AddRealizedGainLossColumn(tbl As ListObject)
+    With tbl.ListColumns.Add
+        .Name = "Realized Gain/Loss"
+        .DataBodyRange.FormulaR1C1 = _
+            "=[@[Gain/Loss Short Term Ytd]]+[@[Gain/Loss Long Term Ytd]]"
+    End With
+End Sub
+
+' In ThisWorkbook module
 Private Sub Workbook_Open()
-    UserForm1.Show
+    fileImporter.Show
 End Sub
-
-Step 8: Save and Test
-
-	1.	Save the workbook as a Macro-Enabled Workbook (*.xlsm).
-	2.	Close and reopen the workbook to test.
-	•	The UserForm should automatically appear.
-	•	You should be able to browse and select files, and the sheets from those files should be imported.
-
-Additional Tips for Aesthetic Improvements
-
-	1.	Add Icons to Buttons:
-	•	Use small icons for the “Browse” and “Submit” buttons.
-	•	Add an Image control to the form and set the Picture property.
-	2.	Alignment:
-	•	Align all controls using the “Format” menu in the VBA Editor (Format > Align).
-	3.	Progress Feedback:
-	•	Add a progress bar (optional) or a message indicating successful completion.
-	4.	Colors:
-	•	Use consistent colors for buttons, background, and text to match your theme.
-	5.	Logo or Branding:
-	•	Add your company’s logo or a header to the form.
-
-Let me know if you’d like help with any specific customization or advanced features!
