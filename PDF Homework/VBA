@@ -1,375 +1,232 @@
-' In UserForm named "fileImporter"
-Option Explicit
-
-Private State As FileImporterState
-Private lblHoldingsPath As MSForms.Label
-Private lblRelationshipsPath As MSForms.Label
-
-Private Sub UserForm_Initialize()
-    ' Initialize the state
-    Set State = New FileImporterState
-    
-    ' Initialize labels if they don't exist
-    If lblHoldingsPath Is Nothing Then
-        Set lblHoldingsPath = Me.Controls.Add("Forms.Label.1", "lblHoldingsPath")
-        lblHoldingsPath.Caption = "No file selected"
-        lblHoldingsPath.Left = 20
-        lblHoldingsPath.Top = 40
-        lblHoldingsPath.Width = 300
-    End If
-    
-    If lblRelationshipsPath Is Nothing Then
-        Set lblRelationshipsPath = Me.Controls.Add("Forms.Label.1", "lblRelationshipsPath")
-        lblRelationshipsPath.Caption = "No file selected"
-        lblRelationshipsPath.Left = 20
-        lblRelationshipsPath.Top = 80
-        lblRelationshipsPath.Width = 300
-    End If
-End Sub
-
-Private Sub btnHoldings_Click()
+Private Sub cmdBrowseHoldings_Click()
     Dim fd As FileDialog
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    
     With fd
         .Title = "Select Holdings File"
         .Filters.Clear
-        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm", 1
+        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm; *.csv", 1
         .AllowMultiSelect = False
-        
         If .Show = -1 Then
-            State.HoldingsFile = .SelectedItems(1)
-            lblHoldingsPath.Caption = GetFileName(State.HoldingsFile)
+            txtHoldingsFile.Text = .SelectedItems(1)
         End If
     End With
 End Sub
 
-Private Sub btnRelationships_Click()
+Private Sub cmdBrowseRelationships_Click()
     Dim fd As FileDialog
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    
     With fd
         .Title = "Select Relationships File"
         .Filters.Clear
-        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm", 1
+        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm; *.csv", 1
         .AllowMultiSelect = False
-        
         If .Show = -1 Then
-            State.RelationshipsFile = .SelectedItems(1)
-            lblRelationshipsPath.Caption = GetFileName(State.RelationshipsFile)
+            txtRelationshipsFile.Text = .SelectedItems(1)
         End If
     End With
 End Sub
 
-Private Function GetFileName(ByVal filePath As String) As String
-    ' Extract just the filename from the full path
-    GetFileName = Mid(filePath, InStrRev(filePath, "\") + 1)
-End Function
-
-Private Sub btnSubmit_Click()
-    If State.HoldingsFile = "" Or State.RelationshipsFile = "" Then
-        MsgBox "Please select both files before submitting.", vbExclamation
+Private Sub cmdProceed_Click()
+    Dim HoldingsFile As String
+    Dim RelationshipsFile As String
+    HoldingsFile = txtHoldingsFile.Text
+    RelationshipsFile = txtRelationshipsFile.Text
+    If HoldingsFile = "" Or RelationshipsFile = "" Then
+        MsgBox "Please select both Holdings and Relationships files.", vbExclamation
         Exit Sub
     End If
-    
-    On Error GoTo ErrorHandler
-    
-    ' Disable screen updating and alerts
-    Application.ScreenUpdating = False
-    Application.DisplayAlerts = False
-    
-    ' Import and process sheets
-    Call ImportAndProcessSheets(State.HoldingsFile, State.RelationshipsFile)
-    
-    ' Enable screen updating and alerts
-    Application.ScreenUpdating = True
-    Application.DisplayAlerts = True
-    
-    MsgBox "Processing completed successfully!", vbInformation
+    Me.Hide ' Hide the UserForm
+
+    ' Import the files
+    ImportFile HoldingsFile, "Holdings"
+    ImportFile RelationshipsFile, "Relationships"
+
+    ' Turn the data on the imported sheets into tables named “Holdings” and “Relationships”
+    CreateTableFromSheet "Holdings"
+    CreateTableFromSheet "Relationships"
+
+    ' Perform data manipulations
+    ManipulateData
+
+    ' Close the UserForm
     Unload Me
-    Exit Sub
 
-ErrorHandler:
-    Application.ScreenUpdating = True
-    Application.DisplayAlerts = True
-    MsgBox "An error occurred: " & Err.Description, vbCritical
-    Err.Clear
+    MsgBox "Data import and processing completed successfully.", vbInformation
 End Sub
 
-' In a standard module named "SheetProcessor"
-Option Explicit
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
 
-Public Sub ImportAndProcessSheets(HoldingsFile As String, RelationshipsFile As String)
-    ' Imports the Holdings and Relationships Excel files into the current workbook,
-    ' converts their data into tables, and performs the specified manipulations.
-    
-    Dim wbCurrent As Workbook
-    Dim wbHoldings As Workbook
-    Dim wbRelationships As Workbook
-    Dim wsHoldings As Worksheet
-    Dim wsRelationships As Worksheet
-    Dim tblHoldings As ListObject
-    Dim tblRelationships As ListObject
-    Dim targetWs As Worksheet
-    Dim formulaUSTL As String
-    Dim formulaULTL As String
-    Dim formulaTotalUL As String
-    Dim formulaULMA As String
-    Dim formulaRGL As String
-    Dim formulaRGLMA As String
-    
-    On Error GoTo ErrorHandler
-    
-    ' Disable screen updating and calculations for performance
+' Add to ThisWorkbook
+Private Sub Workbook_Open()
+    UserForm1.Show
+End Sub
+
+'In Module
+Sub ImportFile(filePath As String, sheetName As String)
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+    Dim wsDest As Worksheet
     Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
-    Application.EnableEvents = False
-    Application.DisplayAlerts = False
-    
-    Set wbCurrent = ThisWorkbook
-    
-    ' Delete existing "Holdings" and "Relationships" sheets if they exist
+
+    ' Check if sheet with sheetName already exists
+    Dim ws As Worksheet
     On Error Resume Next
-    wbCurrent.Sheets("Holdings").Delete
-    wbCurrent.Sheets("Relationships").Delete
-    On Error GoTo ErrorHandler
-    
-    ' Import Holdings
-    Set wbHoldings = Workbooks.Open(Filename:=HoldingsFile, ReadOnly:=True)
-    Set wsHoldings = wbHoldings.Sheets(1)
-    
-    ' Copy Holdings data to current workbook
-    wsHoldings.Copy After:=wbCurrent.Sheets(wbCurrent.Sheets.Count)
-    Set targetWs = wbCurrent.Sheets(wbCurrent.Sheets.Count)
-    targetWs.Name = "Holdings"
-    
-    ' Convert to table
-    Set tblHoldings = targetWs.ListObjects.Add(xlSrcRange, targetWs.UsedRange, , xlYes)
-    tblHoldings.Name = "Holdings"
-    
-    ' Close Holdings file
-    wbHoldings.Close SaveChanges:=False
-    
-    ' Import Relationships
-    Set wbRelationships = Workbooks.Open(Filename:=RelationshipsFile, ReadOnly:=True)
-    Set wsRelationships = wbRelationships.Sheets(1)
-    
-    ' Copy Relationships data to current workbook
-    wsRelationships.Copy After:=wbCurrent.Sheets(wbCurrent.Sheets.Count)
-    Set targetWs = wbCurrent.Sheets(wbCurrent.Sheets.Count)
-    targetWs.Name = "Relationships"
-    
-    ' Convert to table
-    Set tblRelationships = targetWs.ListObjects.Add(xlSrcRange, targetWs.UsedRange, , xlYes)
-    tblRelationships.Name = "Relationships"
-    
-    ' Close Relationships file
-    wbRelationships.Close SaveChanges:=False
-    
-    ' Step 2: Move "Master Account Name" to be the third column in "Relationships" table
-    With tblRelationships
-        Dim colMaster As ListColumn
-        Dim currentIndex As Long
-        Dim desiredIndex As Long
-        desiredIndex = 3 ' Third column
-        
-        On Error Resume Next
-        Set colMaster = .ListColumns("Master Account Name")
-        On Error GoTo ErrorHandler
-        
-        If Not colMaster Is Nothing Then
-            currentIndex = colMaster.Index
-            If currentIndex <> desiredIndex Then
-                ' Move the column to desired position
-                colMaster.Range.Cut
-                .Range.Columns(desiredIndex).Insert Shift:=xlToRight
-            End If
-        Else
-            Err.Raise 1002, "ImportAndProcessSheets", "Master Account Name column not found in Relationships table."
-        End If
-    End With
-    
-    ' Step 3: Insert new column 4 "Unrealized Short Term Losses" with SUMIFS formula
-    With tblRelationships
-        .ListColumns.Add Position:=4
-        .ListColumns(4).Name = "Unrealized Short Term Losses"
-        formulaUSTL = "=SUMIFS(Holdings[Unrealized ShortTerm Gain/Loss], Holdings[Account#],[@[Account#]], Holdings[Unrealized ShortTerm Gain/Loss], ""<0"")"
-        .ListColumns("Unrealized Short Term Losses").DataBodyRange.Formula = formulaUSTL
-    End With
-    
-    ' Step 4: Insert new column 5 "Unrealized Long Term Losses" with SUMIFS formula
-    With tblRelationships
-        .ListColumns.Add Position:=5
-        .ListColumns(5).Name = "Unrealized Long Term Losses"
-        formulaULTL = "=SUMIFS(Holdings[Unrealized LongTerm Gain/Loss], Holdings[Account#],[@[Account#]], Holdings[Unrealized LongTerm Gain/Loss], ""<0"")"
-        .ListColumns("Unrealized Long Term Losses").DataBodyRange.Formula = formulaULTL
-    End With
-    
-    ' Step 5: Insert new column 6 "Total Unrealized Losses" as sum of columns 4 and 5
-    With tblRelationships
-        .ListColumns.Add Position:=6
-        .ListColumns(6).Name = "Total Unrealized Losses"
-        formulaTotalUL = "=[@[Unrealized Short Term Losses]] + [@[Unrealized Long Term Losses]]"
-        .ListColumns("Total Unrealized Losses").DataBodyRange.Formula = formulaTotalUL
-    End With
-    
-    ' Step 6: Insert new column 7 "Unrealized Losses MA" with SUMIF based on "Master Account Name"
-    With tblRelationships
-        .ListColumns.Add Position:=7
-        .ListColumns(7).Name = "Unrealized Losses MA"
-        formulaULMA = "=SUMIF(Relationships[Master Account Name],[@[Master Account Name]], Relationships[Total Unrealized Losses])"
-        .ListColumns("Unrealized Losses MA").DataBodyRange.Formula = formulaULMA
-    End With
-    
-    ' Step 7: Insert new column 8 "Realized Gain/Loss" as sum of "Gain/Loss Short Term Ytd" and "Gain/Loss Long Term Ytd"
-    With tblRelationships
-        .ListColumns.Add Position:=8
-        .ListColumns(8).Name = "Realized Gain/Loss"
-        formulaRGL = "=[@[Gain/Loss Short Term Ytd]] + [@[Gain/Loss Long Term Ytd]]"
-        .ListColumns("Realized Gain/Loss").DataBodyRange.Formula = formulaRGL
-    End With
-    
-    ' Step 8: Insert new column 9 "Realized Gain/Loss MA" with SUMIF based on "Master Account Name"
-    With tblRelationships
-        .ListColumns.Add Position:=9
-        .ListColumns(9).Name = "Realized Gain/Loss MA"
-        formulaRGLMA = "=SUMIF(Relationships[Master Account Name],[@[Master Account Name]], Relationships[Realized Gain/Loss])"
-        .ListColumns("Realized Gain/Loss MA").DataBodyRange.Formula = formulaRGLMA
-    End With
-    
-    ' Optional: Adjust table formatting, auto-fit columns
-    tblHoldings.Range.Columns.AutoFit
-    tblRelationships.Range.Columns.AutoFit
-    
-    ' Re-enable screen updating and calculations
-    Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
-    
-    MsgBox "Import and processing completed successfully.", vbInformation
-    
-    Exit Sub
-    
-ErrorHandler:
-    ' Re-enable settings in case of error
-    Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
-    
-    MsgBox "An error occurred during import and processing: " & Err.Description, vbCritical
-End Sub
-
-' In a new Module named "TestModule"
-Option Explicit
-
-Public Sub TestFileImporter()
-    On Error GoTo TestError
-    
-    ' Create test files
-    CreateTestFiles
-    
-    ' Test the file import process
-    Dim testHoldingsPath As String
-    Dim testRelationshipsPath As String
-    testHoldingsPath = ThisWorkbook.Path & "\TestHoldings.xlsx"
-    testRelationshipsPath = ThisWorkbook.Path & "\TestRelationships.xlsx"
-    
-    ' Test the import process
-    ImportAndProcessSheets testHoldingsPath, testRelationshipsPath
-    
-    ' Verify results
-    VerifyResults
-    
-    MsgBox "All tests passed successfully!", vbInformation
-    Exit Sub
-    
-TestError:
-    MsgBox "Test failed: " & Err.Description, vbCritical
-End Sub
-
-Private Sub CreateTestFiles()
-    ' Create test Holdings workbook
-    Dim wb As Workbook
-    Set wb = Workbooks.Add
-    
-    With wb.Sheets(1)
-        ' Add test data for Holdings
-        .Range("A1").Value = "Account#"
-        .Range("B1").Value = "Unrealized ShortTerm Gain/Loss"
-        .Range("C1").Value = "Unrealized LongTerm Gain/Loss"
-        ' Add some test data rows
-        .Range("A2:A4").Value = Application.Transpose(Array("ACC1", "ACC2", "ACC3"))
-        .Range("B2:B4").Value = Application.Transpose(Array(-100, -200, -300))
-        .Range("C2:C4").Value = Application.Transpose(Array(-150, -250, -350))
-    End With
-    
-    wb.SaveAs ThisWorkbook.Path & "\TestHoldings.xlsx"
-    wb.Close
-    
-    ' Create test Relationships workbook
-    Set wb = Workbooks.Add
-    
-    With wb.Sheets(1)
-        ' Add test data for Relationships
-        .Range("A1").Value = "Account#"
-        .Range("B1").Value = "Master Account Name"
-        .Range("C1").Value = "Gain/Loss Short Term Ytd"
-        .Range("D1").Value = "Gain/Loss Long Term Ytd"
-        ' Add some test data rows
-        .Range("A2:A4").Value = Application.Transpose(Array("ACC1", "ACC2", "ACC3"))
-        .Range("B2:B4").Value = Application.Transpose(Array("MA1", "MA1", "MA2"))
-        .Range("C2:C4").Value = Application.Transpose(Array(100, 200, 300))
-        .Range("D2:D4").Value = Application.Transpose(Array(150, 250, 350))
-    End With
-    
-    wb.SaveAs ThisWorkbook.Path & "\TestRelationships.xlsx"
-    wb.Close
-End Sub
-
-Private Sub VerifyResults()
-    ' Verify tables exist
-    If Not TableExists("Holdings") Then Err.Raise 1000, "VerifyResults", "Holdings table not created"
-    If Not TableExists("Relationships") Then Err.Raise 1000, "VerifyResults", "Relationships table not created"
-    
-    ' Verify calculations
-    VerifyCalculations
-End Sub
-
-Private Function TableExists(tableName As String) As Boolean
-    Dim tbl As ListObject
-    On Error Resume Next
-    Set tbl = ThisWorkbook.Sheets("Relationships").ListObjects(tableName)
-    TableExists = Not tbl Is Nothing
+    Set ws = ThisWorkbook.Sheets(sheetName)
     On Error GoTo 0
-End Function
+    If Not ws Is Nothing Then
+        ' Sheet exists, delete it
+        Application.DisplayAlerts = False
+        ws.Delete
+        Application.DisplayAlerts = True
+    End If
 
-Private Sub VerifyCalculations()
-    Dim tbl As ListObject
-    Set tbl = ThisWorkbook.Sheets("Relationships").ListObjects("Relationships")
-    
-    ' Verify columns exist
-    VerifyColumn tbl, "Unrealized Short Term Losses"
-    VerifyColumn tbl, "Unrealized Long Term Losses"
-    VerifyColumn tbl, "Total Unrealized Losses"
-    VerifyColumn tbl, "Unrealized Losses MA"
-    VerifyColumn tbl, "Realized Gain/Loss"
-    VerifyColumn tbl, "Realized Gain/Loss MA"
-    
-    ' Optionally, add more verification for formula correctness or cell values
+    Set wbSource = Workbooks.Open(filePath, ReadOnly:=True)
+    Set wsSource = wbSource.Sheets(1) ' Assume data is in the first sheet
+
+    ' Copy the sheet to the current workbook
+    wsSource.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    Set wsDest = ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    wsDest.Name = sheetName
+
+    wbSource.Close SaveChanges:=False
+    Application.ScreenUpdating = True
 End Sub
 
-Private Sub VerifyColumn(tbl As ListObject, columnName As String)
-    If Not ColumnExists(tbl, columnName) Then
-        Err.Raise 1001, "VerifyColumn", "Column " & columnName & " not found"
+Sub CreateTableFromSheet(sheetName As String)
+    Dim ws As Worksheet
+    Dim lo As ListObject
+    Dim tblName As String
+    Set ws = ThisWorkbook.Sheets(sheetName)
+    tblName = sheetName
+
+    ' Check if the sheet already contains a table
+    If ws.ListObjects.Count > 0 Then
+        ' Rename the existing table
+        ws.ListObjects(1).Name = tblName
+    Else
+        ' Create a new table
+        Set lo = ws.ListObjects.Add(xlSrcRange, ws.Range("A1").CurrentRegion, , xlYes)
+        lo.Name = tblName
     End If
 End Sub
 
-Private Function ColumnExists(tbl As ListObject, columnName As String) As Boolean
-    Dim col As ListColumn
-    On Error Resume Next
-    Set col = tbl.ListColumns(columnName)
-    ColumnExists = Not col Is Nothing
-    On Error GoTo 0
-End Function
+Sub ManipulateData()
+    ' Steps as per the instructions
+    RearrangeColumns
+    CreateNewColumns
+    UnitTest
+End Sub
+
+Sub RearrangeColumns()
+    Dim ws As Worksheet
+    Dim lo As ListObject
+    Dim colIndex As Long
+    Dim destIndex As Long
+
+    Set ws = ThisWorkbook.Sheets("Relationships")
+    Set lo = ws.ListObjects("Relationships")
+
+    ' Find the column "Master Account Name"
+    colIndex = lo.ListColumns("Master Account Name").Index
+    ' Move it to be the third column
+    destIndex = 3
+
+    If colIndex <> destIndex Then
+        lo.ListColumns("Master Account Name").Range.Cut
+        lo.ListColumns(destIndex).Range.Insert Shift:=xlToRight
+        Application.CutCopyMode = False
+    End If
+End Sub
+
+Sub CreateNewColumns()
+    Dim wsHoldings As Worksheet
+    Dim wsRelationships As Worksheet
+    Dim loHoldings As ListObject
+    Dim loRelationships As ListObject
+
+    Set wsHoldings = ThisWorkbook.Sheets("Holdings")
+    Set wsRelationships = ThisWorkbook.Sheets("Relationships")
+    Set loHoldings = wsHoldings.ListObjects("Holdings")
+    Set loRelationships = wsRelationships.ListObjects("Relationships")
+
+    ' Insert columns as per instructions
+    InsertNewColumn loRelationships, 4, "Unrealized Short Term Losses"
+    InsertNewColumn loRelationships, 5, "Unrealized Long Term Losses"
+    InsertNewColumn loRelationships, 6, "Total Unrealized Losses"
+    InsertNewColumn loRelationships, 7, "Unrealized Losses MA"
+    InsertNewColumn loRelationships, 8, "Realized Gain/Loss"
+    InsertNewColumn loRelationships, 9, "Realized Gains/Losses MA"
+
+    ' Populate the formulas
+    PopulateFormulas loRelationships, loHoldings
+End Sub
+
+Sub InsertNewColumn(lo As ListObject, position As Long, headerName As String)
+    ' Insert a new column at specified position with the given header
+    lo.ListColumns.Add position:=position
+    lo.HeaderRowRange.Cells(1, position).Value = headerName
+End Sub
+
+Sub PopulateFormulas(loRelationships As ListObject, loHoldings As ListObject)
+    Dim wsRelationships As Worksheet
+    Dim wsHoldings As Worksheet
+    Set wsRelationships = loRelationships.Parent
+    Set wsHoldings = loHoldings.Parent
+
+    ' Column indices
+    Dim colUSTL As Long, colULTL As Long, colTUL As Long
+    Dim colULMA As Long, colRGL As Long, colRGLMA As Long
+    Dim colGLSTYtd As Long, colGLLTYtd As Long
+
+    colUSTL = loRelationships.ListColumns("Unrealized Short Term Losses").Index
+    colULTL = loRelationships.ListColumns("Unrealized Long Term Losses").Index
+    colTUL = loRelationships.ListColumns("Total Unrealized Losses").Index
+    colULMA = loRelationships.ListColumns("Unrealized Losses MA").Index
+    colRGL = loRelationships.ListColumns("Realized Gain/Loss").Index
+    colRGLMA = loRelationships.ListColumns("Realized Gains/Losses MA").Index
+
+    colGLSTYtd = loRelationships.ListColumns("Gain/Loss Short Term Ytd").Index
+    colGLLTYtd = loRelationships.ListColumns("Gain/Loss Long Term Ytd").Index
+
+    ' Apply formulas to the entire columns
+    With loRelationships.DataBodyRange
+        ' Unrealized Short Term Losses
+        .Columns(colUSTL).Formula = "=SUMIFS(Holdings[Unrealized ShortTerm Gain/Loss],Holdings[Account#],[@[Account#]],Holdings[Unrealized ShortTerm Gain/Loss],""<0"")"
+        ' Unrealized Long Term Losses
+        .Columns(colULTL).Formula = "=SUMIFS(Holdings[Unrealized LongTerm Gain/Loss],Holdings[Account#],[@[Account#]],Holdings[Unrealized LongTerm Gain/Loss],""<0"")"
+        ' Total Unrealized Losses
+        .Columns(colTUL).Formula = "=[""Unrealized Short Term Losses""]+[""Unrealized Long Term Losses""]"
+        ' Unrealized Losses MA
+        .Columns(colULMA).Formula = "=SUMIFS([""Total Unrealized Losses""],[Master Account Name],[@[Master Account Name]])"
+        ' Realized Gain/Loss
+        .Columns(colRGL).Formula = "=[""Gain/Loss Short Term Ytd""]+[""Gain/Loss Long Term Ytd""]"
+        ' Realized Gains/Losses MA
+        .Columns(colRGLMA).Formula = "=SUMIFS([""Realized Gain/Loss""],[Master Account Name],[@[Master Account Name]])"
+    End With
+End Sub
+
+Sub UnitTest()
+    ' Check that the columns have been added
+    Dim loRelationships As ListObject
+    Set loRelationships = ThisWorkbook.Sheets("Relationships").ListObjects("Relationships")
+
+    Dim requiredColumns As Variant
+    requiredColumns = Array("Unrealized Short Term Losses", "Unrealized Long Term Losses", "Total Unrealized Losses", "Unrealized Losses MA", "Realized Gain/Loss", "Realized Gains/Losses MA")
+
+    Dim i As Long
+    Dim colExists As Boolean
+    For i = LBound(requiredColumns) To UBound(requiredColumns)
+        colExists = False
+        On Error Resume Next
+        colExists = Not loRelationships.ListColumns(requiredColumns(i)) Is Nothing
+        On Error GoTo 0
+        If Not colExists Then
+            MsgBox "Column '" & requiredColumns(i) & "' is missing in Relationships table.", vbCritical
+            Exit Sub
+        End If
+    Next i
+
+    MsgBox "Unit test passed. All required columns are present.", vbInformation
+End Sub
