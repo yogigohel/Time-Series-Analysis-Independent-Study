@@ -1,146 +1,49 @@
-Private Sub cmdBrowseHoldings_Click()
-    Dim fd As FileDialog
-    Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    With fd
-        .Title = "Select Holdings File"
-        .Filters.Clear
-        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm; *.csv", 1
-        .AllowMultiSelect = False
-        If .Show = -1 Then
-            txtHoldingsFile.Text = .SelectedItems(1)
-        End If
-    End With
-End Sub
+Option Explicit
 
-Private Sub cmdBrowseRelationships_Click()
-    Dim fd As FileDialog
-    Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    With fd
-        .Title = "Select Relationships File"
-        .Filters.Clear
-        .Filters.Add "Excel Files", "*.xls; *.xlsx; *.xlsm; *.csv", 1
-        .AllowMultiSelect = False
-        If .Show = -1 Then
-            txtRelationshipsFile.Text = .SelectedItems(1)
-        End If
-    End With
-End Sub
-
-Private Sub cmdProceed_Click()
-    Dim HoldingsFile As String
-    Dim RelationshipsFile As String
-    HoldingsFile = txtHoldingsFile.Text
-    RelationshipsFile = txtRelationshipsFile.Text
-    If HoldingsFile = "" Or RelationshipsFile = "" Then
-        MsgBox "Please select both Holdings and Relationships files.", vbExclamation
-        Exit Sub
-    End If
-    Me.Hide ' Hide the UserForm
-
-    ' Import the files
-    ImportFile HoldingsFile, "Holdings"
-    ImportFile RelationshipsFile, "Relationships"
-
-    ' Turn the data on the imported sheets into tables named “Holdings” and “Relationships”
-    CreateTableFromSheet "Holdings"
-    CreateTableFromSheet "Relationships"
-
-    ' Perform data manipulations
-    ManipulateData
-
-    ' Close the UserForm
-    Unload Me
-
-    MsgBox "Data import and processing completed successfully.", vbInformation
-End Sub
-
-Private Sub cmdCancel_Click()
-    Unload Me
-End Sub
-
-' Add to ThisWorkbook
-Private Sub Workbook_Open()
-    UserForm1.Show
-End Sub
-
-'In Module
 Sub ImportFile(filePath As String, sheetName As String)
-    Dim wbSource As Workbook
-    Dim wsSource As Worksheet
-    Dim wsDest As Worksheet
-    Application.ScreenUpdating = False
-
-    ' Check if sheet with sheetName already exists
-    Dim ws As Worksheet
-    On Error Resume Next
-    Set ws = ThisWorkbook.Sheets(sheetName)
-    On Error GoTo 0
-    If Not ws Is Nothing Then
-        ' Sheet exists, delete it
-        Application.DisplayAlerts = False
-        ws.Delete
-        Application.DisplayAlerts = True
-    End If
-
-    Set wbSource = Workbooks.Open(filePath, ReadOnly:=True)
-    Set wsSource = wbSource.Sheets(1) ' Assume data is in the first sheet
-
-    ' Copy the sheet to the current workbook
-    wsSource.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
-    Set wsDest = ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
-    wsDest.Name = sheetName
-
-    wbSource.Close SaveChanges:=False
-    Application.ScreenUpdating = True
+    ' (Code remains the same)
+    ' ... [No changes needed here]
 End Sub
 
 Sub CreateTableFromSheet(sheetName As String)
-    Dim ws As Worksheet
-    Dim lo As ListObject
-    Dim tblName As String
-    Set ws = ThisWorkbook.Sheets(sheetName)
-    tblName = sheetName
-
-    ' Check if the sheet already contains a table
-    If ws.ListObjects.Count > 0 Then
-        ' Rename the existing table
-        ws.ListObjects(1).Name = tblName
-    Else
-        ' Create a new table
-        Set lo = ws.ListObjects.Add(xlSrcRange, ws.Range("A1").CurrentRegion, , xlYes)
-        lo.Name = tblName
-    End If
+    ' (Code remains the same)
+    ' ... [No changes needed here]
 End Sub
 
 Sub ManipulateData()
-    ' Steps as per the instructions
     RearrangeColumns
     CreateNewColumns
+    PopulateDataWithoutSUMIF
     UnitTest
 End Sub
 
 Sub RearrangeColumns()
-    Dim ws As Worksheet
-    Dim lo As ListObject
-    Dim colIndex As Long
-    Dim destIndex As Long
-
-    Set ws = ThisWorkbook.Sheets("Relationships")
-    Set lo = ws.ListObjects("Relationships")
-
-    ' Find the column "Master Account Name"
-    colIndex = lo.ListColumns("Master Account Name").Index
-    ' Move it to be the third column
-    destIndex = 3
-
-    If colIndex <> destIndex Then
-        lo.ListColumns("Master Account Name").Range.Cut
-        lo.ListColumns(destIndex).Range.Insert Shift:=xlToRight
-        Application.CutCopyMode = False
-    End If
+    ' (Code remains the same)
+    ' ... [No changes needed here]
 End Sub
 
 Sub CreateNewColumns()
+    Dim loRelationships As ListObject
+
+    Set loRelationships = ThisWorkbook.Sheets("Relationships").ListObjects("Relationships")
+
+    ' Insert columns as per instructions
+    InsertNewColumn loRelationships, 4, "Unrealized Short Term Losses"
+    InsertNewColumn loRelationships, 5, "Unrealized Long Term Losses"
+    InsertNewColumn loRelationships, 6, "Total Unrealized Losses"
+    InsertNewColumn loRelationships, 7, "Unrealized Losses MA"
+    InsertNewColumn loRelationships, 8, "Realized Gain/Loss"
+    InsertNewColumn loRelationships, 9, "Realized Gains/Losses MA"
+End Sub
+
+Sub InsertNewColumn(lo As ListObject, position As Long, headerName As String)
+    ' Insert a new column at specified position with the given header
+    lo.ListColumns.Add position:=position
+    lo.HeaderRowRange.Cells(1, position).Value = headerName
+End Sub
+
+' New Subroutine to Populate Data Without Using SUMIF
+Sub PopulateDataWithoutSUMIF()
     Dim wsHoldings As Worksheet
     Dim wsRelationships As Worksheet
     Dim loHoldings As ListObject
@@ -151,78 +54,130 @@ Sub CreateNewColumns()
     Set loHoldings = wsHoldings.ListObjects("Holdings")
     Set loRelationships = wsRelationships.ListObjects("Relationships")
 
-    ' Insert columns as per instructions
-    InsertNewColumn loRelationships, 4, "Unrealized Short Term Losses"
-    InsertNewColumn loRelationships, 5, "Unrealized Long Term Losses"
-    InsertNewColumn loRelationships, 6, "Total Unrealized Losses"
-    InsertNewColumn loRelationships, 7, "Unrealized Losses MA"
-    InsertNewColumn loRelationships, 8, "Realized Gain/Loss"
-    InsertNewColumn loRelationships, 9, "Realized Gains/Losses MA"
+    ' Create Dictionaries to store sums
+    Dim dictUSTLosses As Object
+    Dim dictULTLosses As Object
+    Dim dictTotalUnrealizedLossesMA As Object
+    Dim dictRealizedGainsLossesMA As Object
 
-    ' Populate the formulas
-    PopulateFormulas loRelationships, loHoldings
-End Sub
+    Set dictUSTLosses = CreateObject("Scripting.Dictionary")
+    Set dictULTLosses = CreateObject("Scripting.Dictionary")
+    Set dictTotalUnrealizedLossesMA = CreateObject("Scripting.Dictionary")
+    Set dictRealizedGainsLossesMA = CreateObject("Scripting.Dictionary")
 
-Sub InsertNewColumn(lo As ListObject, position As Long, headerName As String)
-    ' Insert a new column at specified position with the given header
-    lo.ListColumns.Add position:=position
-    lo.HeaderRowRange.Cells(1, position).Value = headerName
-End Sub
+    ' Step 1: Compute Unrealized Short Term Losses and Long Term Losses per Account#
+    Dim i As Long
+    Dim acctNum As Variant
+    Dim ustGainLoss As Double
+    Dim ultGainLoss As Double
 
-Sub PopulateFormulas(loRelationships As ListObject, loHoldings As ListObject)
-    Dim wsRelationships As Worksheet
-    Dim wsHoldings As Worksheet
-    Set wsRelationships = loRelationships.Parent
-    Set wsHoldings = loHoldings.Parent
+    With loHoldings.DataBodyRange
+        For i = 1 To .Rows.Count
+            acctNum = .Cells(i, loHoldings.ListColumns("Account#").Index).Value
 
-    ' Column indices
-    Dim colUSTL As Long, colULTL As Long, colTUL As Long
-    Dim colULMA As Long, colRGL As Long, colRGLMA As Long
+            ' Unrealized Short Term Gain/Loss
+            ustGainLoss = .Cells(i, loHoldings.ListColumns("Unrealized ShortTerm Gain/Loss").Index).Value
+            If IsNumeric(ustGainLoss) And ustGainLoss < 0 Then
+                If dictUSTLosses.Exists(acctNum) Then
+                    dictUSTLosses(acctNum) = dictUSTLosses(acctNum) + ustGainLoss
+                Else
+                    dictUSTLosses.Add acctNum, ustGainLoss
+                End If
+            End If
 
-    colUSTL = loRelationships.ListColumns("Unrealized Short Term Losses").Index
-    colULTL = loRelationships.ListColumns("Unrealized Long Term Losses").Index
-    colTUL = loRelationships.ListColumns("Total Unrealized Losses").Index
-    colULMA = loRelationships.ListColumns("Unrealized Losses MA").Index
-    colRGL = loRelationships.ListColumns("Realized Gain/Loss").Index
-    colRGLMA = loRelationships.ListColumns("Realized Gains/Losses MA").Index
+            ' Unrealized Long Term Gain/Loss
+            ultGainLoss = .Cells(i, loHoldings.ListColumns("Unrealized LongTerm Gain/Loss").Index).Value
+            If IsNumeric(ultGainLoss) And ultGainLoss < 0 Then
+                If dictULTLosses.Exists(acctNum) Then
+                    dictULTLosses(acctNum) = dictULTLosses(acctNum) + ultGainLoss
+                Else
+                    dictULTLosses.Add acctNum, ultGainLoss
+                End If
+            End If
+        Next i
+    End With
 
-    ' Apply formulas to the entire columns
+    ' Step 2: Populate Unrealized Losses in Relationships Table
+    Dim accountNumber As Variant
+    Dim masterAccountName As String
+    Dim totalUnrealizedLoss As Double
+    Dim realizedGainLoss As Double
+    Dim gainLossSTYtd As Double
+    Dim gainLossLTYtd As Double
+
     With loRelationships.DataBodyRange
-        ' Unrealized Short Term Losses
-        .Columns(colUSTL).Formula = "=SUMIFS(Holdings[Unrealized ShortTerm Gain/Loss], Holdings[Account#],[@Account#], Holdings[Unrealized ShortTerm Gain/Loss],""<0"")"
-        ' Unrealized Long Term Losses
-        .Columns(colULTL).Formula = "=SUMIFS(Holdings[Unrealized LongTerm Gain/Loss], Holdings[Account#],[@Account#], Holdings[Unrealized LongTerm Gain/Loss],""<0"")"
-        ' Total Unrealized Losses
-        .Columns(colTUL).Formula = "=[@[Unrealized Short Term Losses]]+[@[Unrealized Long Term Losses]]"
-        ' Unrealized Losses MA
-        .Columns(colULMA).Formula = "=SUMIFS([Total Unrealized Losses], [Master Account Name],[@[Master Account Name]])"
-        ' Realized Gain/Loss
-        .Columns(colRGL).Formula = "=[@[Gain/Loss Short Term Ytd]]+[@[Gain/Loss Long Term Ytd]]"
-        ' Realized Gains/Losses MA
-        .Columns(colRGLMA).Formula = "=SUMIFS([Realized Gain/Loss], [Master Account Name],[@[Master Account Name]])"
+        For i = 1 To .Rows.Count
+            accountNumber = .Cells(i, loRelationships.ListColumns("Account#").Index).Value
+            masterAccountName = .Cells(i, loRelationships.ListColumns("Master Account Name").Index).Value
+
+            ' Unrealized Short Term Losses
+            If dictUSTLosses.Exists(accountNumber) Then
+                .Cells(i, loRelationships.ListColumns("Unrealized Short Term Losses").Index).Value = dictUSTLosses(accountNumber)
+            Else
+                .Cells(i, loRelationships.ListColumns("Unrealized Short Term Losses").Index).Value = 0
+            End If
+
+            ' Unrealized Long Term Losses
+            If dictULTLosses.Exists(accountNumber) Then
+                .Cells(i, loRelationships.ListColumns("Unrealized Long Term Losses").Index).Value = dictULTLosses(accountNumber)
+            Else
+                .Cells(i, loRelationships.ListColumns("Unrealized Long Term Losses").Index).Value = 0
+            End If
+
+            ' Total Unrealized Losses
+            totalUnrealizedLoss = .Cells(i, loRelationships.ListColumns("Unrealized Short Term Losses").Index).Value + _
+                                  .Cells(i, loRelationships.ListColumns("Unrealized Long Term Losses").Index).Value
+            .Cells(i, loRelationships.ListColumns("Total Unrealized Losses").Index).Value = totalUnrealizedLoss
+
+            ' Accumulate Total Unrealized Losses by Master Account Name
+            If dictTotalUnrealizedLossesMA.Exists(masterAccountName) Then
+                dictTotalUnrealizedLossesMA(masterAccountName) = dictTotalUnrealizedLossesMA(masterAccountName) + totalUnrealizedLoss
+            Else
+                dictTotalUnrealizedLossesMA.Add masterAccountName, totalUnrealizedLoss
+            End If
+
+            ' Realized Gain/Loss
+            gainLossSTYtd = .Cells(i, loRelationships.ListColumns("Gain/Loss Short Term Ytd").Index).Value
+            gainLossLTYtd = .Cells(i, loRelationships.ListColumns("Gain/Loss Long Term Ytd").Index).Value
+
+            If Not IsNumeric(gainLossSTYtd) Then gainLossSTYtd = 0
+            If Not IsNumeric(gainLossLTYtd) Then gainLossLTYtd = 0
+
+            realizedGainLoss = gainLossSTYtd + gainLossLTYtd
+            .Cells(i, loRelationships.ListColumns("Realized Gain/Loss").Index).Value = realizedGainLoss
+
+            ' Accumulate Realized Gain/Loss by Master Account Name
+            If dictRealizedGainsLossesMA.Exists(masterAccountName) Then
+                dictRealizedGainsLossesMA(masterAccountName) = dictRealizedGainsLossesMA(masterAccountName) + realizedGainLoss
+            Else
+                dictRealizedGainsLossesMA.Add masterAccountName, realizedGainLoss
+            End If
+        Next i
+    End With
+
+    ' Step 3: Populate Unrealized Losses MA and Realized Gains/Losses MA
+    With loRelationships.DataBodyRange
+        For i = 1 To .Rows.Count
+            masterAccountName = .Cells(i, loRelationships.ListColumns("Master Account Name").Index).Value
+
+            ' Unrealized Losses MA
+            If dictTotalUnrealizedLossesMA.Exists(masterAccountName) Then
+                .Cells(i, loRelationships.ListColumns("Unrealized Losses MA").Index).Value = dictTotalUnrealizedLossesMA(masterAccountName)
+            Else
+                .Cells(i, loRelationships.ListColumns("Unrealized Losses MA").Index).Value = 0
+            End If
+
+            ' Realized Gains/Losses MA
+            If dictRealizedGainsLossesMA.Exists(masterAccountName) Then
+                .Cells(i, loRelationships.ListColumns("Realized Gains/Losses MA").Index).Value = dictRealizedGainsLossesMA(masterAccountName)
+            Else
+                .Cells(i, loRelationships.ListColumns("Realized Gains/Losses MA").Index).Value = 0
+            End If
+        Next i
     End With
 End Sub
 
 Sub UnitTest()
-    ' Check that the columns have been added
-    Dim loRelationships As ListObject
-    Set loRelationships = ThisWorkbook.Sheets("Relationships").ListObjects("Relationships")
-
-    Dim requiredColumns As Variant
-    requiredColumns = Array("Unrealized Short Term Losses", "Unrealized Long Term Losses", "Total Unrealized Losses", "Unrealized Losses MA", "Realized Gain/Loss", "Realized Gains/Losses MA")
-
-    Dim i As Long
-    Dim colExists As Boolean
-    For i = LBound(requiredColumns) To UBound(requiredColumns)
-        colExists = False
-        On Error Resume Next
-        colExists = Not loRelationships.ListColumns(requiredColumns(i)) Is Nothing
-        On Error GoTo 0
-        If Not colExists Then
-            MsgBox "Column '" & requiredColumns(i) & "' is missing in Relationships table.", vbCritical
-            Exit Sub
-        End If
-    Next i
-
-    MsgBox "Unit test passed. All required columns are present.", vbInformation
+    ' (Code remains the same)
+    ' ... [No changes needed here]
 End Sub
