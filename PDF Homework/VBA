@@ -1,25 +1,111 @@
 Option Explicit
 
 Sub ImportFile(filePath As String, sheetName As String)
-    ' (Code remains the same)
-    ' ... [No changes needed here]
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+    Dim wsDest As Worksheet
+    Application.ScreenUpdating = False
+
+    ' Check if sheet with sheetName already exists
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(sheetName)
+    On Error GoTo 0
+    If Not ws Is Nothing Then
+        ' Sheet exists, delete it
+        Application.DisplayAlerts = False
+        ws.Delete
+        Application.DisplayAlerts = True
+    End If
+
+    Set wbSource = Workbooks.Open(filePath, ReadOnly:=True)
+    Set wsSource = wbSource.Sheets(1) ' Assume data is in the first sheet
+
+    ' Copy the sheet to the current workbook
+    wsSource.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    Set wsDest = ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    wsDest.Name = sheetName
+
+    wbSource.Close SaveChanges:=False
+    Application.ScreenUpdating = True
 End Sub
 
 Sub CreateTableFromSheet(sheetName As String)
-    ' (Code remains the same)
-    ' ... [No changes needed here]
+    Dim ws As Worksheet
+    Dim lo As ListObject
+    Dim tblName As String
+    Set ws = ThisWorkbook.Sheets(sheetName)
+    tblName = sheetName
+
+    ' Check if the sheet already contains a table
+    If ws.ListObjects.Count > 0 Then
+        ' Rename the existing table
+        ws.ListObjects(1).Name = tblName
+    Else
+        ' Create a new table
+        Set lo = ws.ListObjects.Add(xlSrcRange, ws.Range("A1").CurrentRegion, , xlYes)
+        lo.Name = tblName
+    End If
 End Sub
 
 Sub ManipulateData()
+    ' New Step: Remove IRA accounts from Relationships table
+    RemoveIRAAccounts
+
+    ' Proceed with the rest of the operations
     RearrangeColumns
     CreateNewColumns
     PopulateDataWithoutSUMIF
     UnitTest
 End Sub
 
+Sub RemoveIRAAccounts()
+    Dim loRelationships As ListObject
+    Dim i As Long
+    Dim acctName As String
+    Dim regEx As Object
+    Dim ws As Worksheet
+
+    Set ws = ThisWorkbook.Sheets("Relationships")
+    Set loRelationships = ws.ListObjects("Relationships")
+
+    ' Initialize Regular Expression object
+    Set regEx = CreateObject("VBScript.RegExp")
+    With regEx
+        .Pattern = "\bIRA\b" ' Matches "IRA" as a whole word
+        .IgnoreCase = True
+        .Global = False
+    End With
+
+    ' Loop backwards to avoid skipping rows after deletion
+    For i = loRelationships.DataBodyRange.Rows.Count To 1 Step -1
+        acctName = loRelationships.DataBodyRange.Cells(i, loRelationships.ListColumns("Acct Name").Index).Value
+        If regEx.Test(acctName) Then
+            ' Delete the entire row from the table
+            loRelationships.ListRows(i).Delete
+        End If
+    Next i
+End Sub
+
 Sub RearrangeColumns()
-    ' (Code remains the same)
-    ' ... [No changes needed here]
+    Dim ws As Worksheet
+    Dim lo As ListObject
+    Dim colIndex As Long
+    Dim destIndex As Long
+
+    Set ws = ThisWorkbook.Sheets("Relationships")
+    Set lo = ws.ListObjects("Relationships")
+
+    ' Find the column "Master Account Name"
+    colIndex = lo.ListColumns("Master Account Name").Index
+    ' Move it to be the third column
+    destIndex = 3
+
+    If colIndex <> destIndex Then
+        lo.ListColumns("Master Account Name").Range.Cut
+        lo.ListColumns(destIndex).Range.Insert Shift:=xlToRight
+        Application.CutCopyMode = False
+    End If
 End Sub
 
 Sub CreateNewColumns()
@@ -42,7 +128,6 @@ Sub InsertNewColumn(lo As ListObject, position As Long, headerName As String)
     lo.HeaderRowRange.Cells(1, position).Value = headerName
 End Sub
 
-' New Subroutine to Populate Data Without Using SUMIF
 Sub PopulateDataWithoutSUMIF()
     Dim wsHoldings As Worksheet
     Dim wsRelationships As Worksheet
@@ -65,7 +150,7 @@ Sub PopulateDataWithoutSUMIF()
     Set dictTotalUnrealizedLossesMA = CreateObject("Scripting.Dictionary")
     Set dictRealizedGainsLossesMA = CreateObject("Scripting.Dictionary")
 
-    ' Step 1: Compute Unrealized Short Term Losses and Long Term Losses per Account#
+    ' Step 1: Compute Unrealized Losses per Account#
     Dim i As Long
     Dim acctNum As Variant
     Dim ustGainLoss As Double
@@ -178,6 +263,25 @@ Sub PopulateDataWithoutSUMIF()
 End Sub
 
 Sub UnitTest()
-    ' (Code remains the same)
-    ' ... [No changes needed here]
+    ' Check that the columns have been added
+    Dim loRelationships As ListObject
+    Set loRelationships = ThisWorkbook.Sheets("Relationships").ListObjects("Relationships")
+
+    Dim requiredColumns As Variant
+    requiredColumns = Array("Unrealized Short Term Losses", "Unrealized Long Term Losses", "Total Unrealized Losses", "Unrealized Losses MA", "Realized Gain/Loss", "Realized Gains/Losses MA")
+
+    Dim i As Long
+    Dim colExists As Boolean
+    For i = LBound(requiredColumns) To UBound(requiredColumns)
+        colExists = False
+        On Error Resume Next
+        colExists = Not loRelationships.ListColumns(requiredColumns(i)) Is Nothing
+        On Error GoTo 0
+        If Not colExists Then
+            MsgBox "Column '" & requiredColumns(i) & "' is missing in Relationships table.", vbCritical
+            Exit Sub
+        End If
+    Next i
+
+    MsgBox "Unit test passed. All required columns are present.", vbInformation
 End Sub
