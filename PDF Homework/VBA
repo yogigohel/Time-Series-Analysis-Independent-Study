@@ -178,7 +178,6 @@ Sub PopulateFormulas(loRelationships As ListObject, loHoldings As ListObject)
     ' Column indices
     Dim colUSTL As Long, colULTL As Long, colTUL As Long
     Dim colULMA As Long, colRGL As Long, colRGLMA As Long
-    Dim colGLSTYtd As Long, colGLLTYtd As Long
 
     colUSTL = loRelationships.ListColumns("Unrealized Short Term Losses").Index
     colULTL = loRelationships.ListColumns("Unrealized Long Term Losses").Index
@@ -187,23 +186,20 @@ Sub PopulateFormulas(loRelationships As ListObject, loHoldings As ListObject)
     colRGL = loRelationships.ListColumns("Realized Gain/Loss").Index
     colRGLMA = loRelationships.ListColumns("Realized Gains/Losses MA").Index
 
-    colGLSTYtd = loRelationships.ListColumns("Gain/Loss Short Term Ytd").Index
-    colGLLTYtd = loRelationships.ListColumns("Gain/Loss Long Term Ytd").Index
-
     ' Apply formulas to the entire columns
     With loRelationships.DataBodyRange
         ' Unrealized Short Term Losses
-        .Columns(colUSTL).Formula = "=SUMIFS(Holdings[Unrealized ShortTerm Gain/Loss],Holdings[Account#],[@[Account#]],Holdings[Unrealized ShortTerm Gain/Loss],""<0"")"
+        .Columns(colUSTL).Formula = "=SUMIFS(Holdings[Unrealized ShortTerm Gain/Loss], Holdings[Account#],[@Account#], Holdings[Unrealized ShortTerm Gain/Loss],""<0"")"
         ' Unrealized Long Term Losses
-        .Columns(colULTL).Formula = "=SUMIFS(Holdings[Unrealized LongTerm Gain/Loss],Holdings[Account#],[@[Account#]],Holdings[Unrealized LongTerm Gain/Loss],""<0"")"
+        .Columns(colULTL).Formula = "=SUMIFS(Holdings[Unrealized LongTerm Gain/Loss], Holdings[Account#],[@Account#], Holdings[Unrealized LongTerm Gain/Loss],""<0"")"
         ' Total Unrealized Losses
-        .Columns(colTUL).Formula = "=[""Unrealized Short Term Losses""]+[""Unrealized Long Term Losses""]"
+        .Columns(colTUL).Formula = "=[@[Unrealized Short Term Losses]]+[@[Unrealized Long Term Losses]]"
         ' Unrealized Losses MA
-        .Columns(colULMA).Formula = "=SUMIFS([""Total Unrealized Losses""],[Master Account Name],[@[Master Account Name]])"
+        .Columns(colULMA).Formula = "=SUMIFS([Total Unrealized Losses], [Master Account Name],[@[Master Account Name]])"
         ' Realized Gain/Loss
-        .Columns(colRGL).Formula = "=[""Gain/Loss Short Term Ytd""]+[""Gain/Loss Long Term Ytd""]"
+        .Columns(colRGL).Formula = "=[@[Gain/Loss Short Term Ytd]]+[@[Gain/Loss Long Term Ytd]]"
         ' Realized Gains/Losses MA
-        .Columns(colRGLMA).Formula = "=SUMIFS([""Realized Gain/Loss""],[Master Account Name],[@[Master Account Name]])"
+        .Columns(colRGLMA).Formula = "=SUMIFS([Realized Gain/Loss], [Master Account Name],[@[Master Account Name]])"
     End With
 End Sub
 
