@@ -1,20 +1,55 @@
-I'll help you create an Excel workbook that efficiently handles cosine matching for submission routing. Here's a step-by-step implementation:
+I'll revise the solution to incorporate category filtering for more precise matching.
 
 1. Structure Setup:
 - Sheet 1: "Keywords" table with columns "Keyword" and "Shorthand"
-- Sheet 2: "Historical_Data" with your 4 columns
+- Sheet 2: "Historical_Data" with 6 columns:
+  * SubmissionID
+  * SubmissionTitle
+  * Submission Description
+  * Reviewed with
+  * Category
+  * Subcategory
 - Sheet 3: "New_Submission" for input
 - Sheet 4: "Vectorization" for calculations
 - Sheet 5: "Results" for top 10 matches
+- Sheet 6: "Categories" for dropdown lists (new)
 
-2. Create Dynamic Named Ranges:
+2. Create Categories Sheet for Dropdowns:
+```
+A1: "Categories"
+B1: "Subcategories"
+A2: =UNIQUE(Historical_Data[Category])
+B2: =UNIQUE(Historical_Data[Subcategory])
+```
+
+3. Create Dynamic Named Ranges:
 ```
 Keywords_Range = Keywords[Keyword]
 Shorthand_Range = Keywords[Shorthand]
 Historical_Range = Historical_Data[#All]
+Categories_List = Categories!$A$2:$A$100
+Subcategories_List = Categories!$B$2:$B$100
 ```
 
-3. On "Vectorization" sheet, create a keyword presence matrix:
+4. On "New_Submission" sheet:
+```
+A1: "Title"
+A2: "Description"
+A3: "Category"
+A4: "Subcategory"
+B1: [Input cell for new submission title]
+B2: [Input cell for new submission description]
+B3: [Dropdown cell with data validation from Categories_List]
+B4: [Dropdown cell with data validation from Subcategories_List]
+
+// Add data validation to B3:
+Data Validation -> List -> =Categories_List
+
+// Add data validation to B4:
+Data Validation -> List -> =Subcategories_List
+```
+
+5. On "Vectorization" sheet:
 ```
 A1: "SubmissionID"
 B1: =TRANSPOSE(Keywords[Keyword])
@@ -30,24 +65,22 @@ B2: =LET(
 )
 ```
 
-4. On "New_Submission" sheet:
-```
-A1: "Title"
-A2: "Description"
-B1: [Input cell for new submission title]
-B2: [Input cell for new submission description]
-```
-
-5. Calculate cosine similarity:
-On "Results" sheet:
+6. On "Results" sheet:
 ```
 A1: "Historical_ID"
-B1: "Similarity_Score"
-C1: "Reviewed_With"
+B1: "Category_Match"
+C1: "Subcategory_Match"
+D1: "Similarity_Score"
+E1: "Combined_Score"
+F1: "Reviewed_With"
 
 A2: =Historical_Data[SubmissionID]
 
-B2: =LET(
+B2: =(Historical_Data[Category]=New_Submission!$B$3)*1
+
+C2: =(Historical_Data[Subcategory]=New_Submission!$B$4)*1
+
+D2: =LET(
     new_text, UPPER($'New_Submission'.$B$1&" "&$'New_Submission'.$B$2),
     new_vector, OR(
         ISNUMBER(SEARCH(TRANSPOSE(UPPER(Keywords[Keyword])),new_text)),
@@ -60,35 +93,75 @@ B2: =LET(
     dot_product/(magnitude1*magnitude2)
 )
 
-C2: =XLOOKUP(A2,Historical_Data[SubmissionID],Historical_Data[Reviewed with])
+// Combined score weights category matches more heavily
+E2: =D2*(1 + B2*0.5 + C2*0.3)
+
+F2: =XLOOKUP(A2,Historical_Data[SubmissionID],Historical_Data[Reviewed with])
 ```
 
-6. Create Top 10 Results section:
+7. Create Top 10 Results section:
 ```
-E1: "Top 10 Suggested Reviewers"
-E2: =SORT(
-    FILTER(
-        C2:C1000,
-        B2:B1000>0
+H1: "Top 10 Suggested Reviewers"
+H2: =LET(
+    filtered_data, FILTER(
+        F2:F1000,
+        AND(
+            E2:E1000>0,
+            B2:B1000=1  // Must match category
+        )
     ),
-    FILTER(
-        B2:B1000,
-        B2:B1000>0
+    filtered_scores, FILTER(
+        E2:E1000,
+        AND(
+            E2:E1000>0,
+            B2:B1000=1  // Must match category
+        )
     ),
-    -1
+    SORT(
+        filtered_data,
+        filtered_scores,
+        -1
+    )
 )
 ```
 
-Key Features of this Implementation:
-- Uses array formulas for efficient processing
-- Dynamically handles new keywords and historical data
-- Considers both full keywords and shorthand variations
-- Automatically updates when new submissions are entered
-- Maintains calculation speed through optimized array operations
+Key Changes and Improvements:
+1. Added category and subcategory filtering
+2. Created dropdown lists for easy category selection
+3. Implemented weighted scoring system:
+   - Base similarity score from cosine matching
+   - +50% boost for matching category
+   - +30% boost for matching subcategory
+4. Results are filtered to only show matches within the same category
+5. Maintained dynamic nature for adding new categories/subcategories
+
+Additional Features:
+1. Category Validation:
+```
+// On New_Submission sheet, add this formula to help validate subcategory selection
+C4: =IF(AND(B3<>"",B4<>""),
+    IF(COUNTIFS(Historical_Data[Category],B3,Historical_Data[Subcategory],B4)>0,
+        "Valid combination",
+        "Warning: This category/subcategory combination doesn't exist in historical data"
+    ),
+    ""
+)
+```
+
+2. Quick Statistics:
+```
+// On Results sheet
+H12: "Statistics"
+H13: "Category Match Count"
+I13: =COUNTIF(B2:B1000,1)
+H14: "Subcategory Match Count"
+I14: =COUNTIF(C2:C1000,1)
+```
 
 Performance Optimization Tips:
 - Use structured tables for easy maintenance
+- Consider adding index columns if dealing with large datasets
+- Use helper columns for frequently accessed calculations
 - Keep calculation mode on automatic unless updating large datasets
-- If performance slows, consider splitting calculations across multiple helper columns
 
-Note: Adjust range references (like C2:C1000) based on your actual data size. The formulas use structured references where possible to maintain dynamism.
+This revised version provides more accurate matching by ensuring that suggested reviewers come from the same category while still considering subcategory matches as a bonus factor. The weighted scoring system allows for fine-tuning of how much impact each factor has on the final recommendations.​​​​​​​​​​​​​​​​
