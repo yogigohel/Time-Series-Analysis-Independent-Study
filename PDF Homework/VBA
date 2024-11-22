@@ -54,15 +54,9 @@ Data Validation -> List -> =Subcategories_List
 A1: "SubmissionID"
 B1: =TRANSPOSE(Keywords[Keyword])
 A2: =Historical_Data[SubmissionID]
-B2: =LET(
-    text, UPPER(INDEX(Historical_Data[SubmissionTitle], ROW()-1) & " " & INDEX(Historical_Data[Submission Description], ROW()-1)),
-    keyword, UPPER(B$1),
-    shorthand, UPPER(XLOOKUP(B$1, Keywords[Keyword], Keywords[Shorthand], "")),
-    OR(
-        NOT(ISERROR(SEARCH(keyword, text))),
-        IF(shorthand="", FALSE, NOT(ISERROR(SEARCH(shorthand, text))))
-    )
-)
+B2: =--(OR(ISNUMBER(SEARCH(UPPER(Keywords!$A2), UPPER(Historical_Data!$B2 & " " & Historical_Data!$C2))), 
+       ISNUMBER(SEARCH(UPPER(Keywords!$B2), UPPER(Historical_Data!$B2 & " " & Historical_Data!$C2)))))
+
 ```
 
 6. On "Results" sheet:
