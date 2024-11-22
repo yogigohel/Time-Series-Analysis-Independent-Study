@@ -77,26 +77,15 @@ B2: =(Historical_Data[Category]=New_Submission!$B$3)*1
 
 C2: =(Historical_Data[Subcategory]=New_Submission!$B$4)*1
 
-D2: =LET(
-    new_title, UPPER(New_Submission!B1),
-    new_description, UPPER(New_Submission!B2),
-    new_text, new_title & " " & new_description,
-    keywords, UPPER(Keywords!$A$2:$A$1000),
-    shorthands, UPPER(Keywords!$B$2:$B$1000),
-    combined_keywords, IF(shorthands="", keywords, shorthands),
-    keyword_presence_new, --(ISNUMBER(SEARCH(keywords, new_text)) + ISNUMBER(SEARCH(shorthands, new_text)) > 0),
-    vector_new, keyword_presence_new,
-    
-    submission_id, A2,
-    row_num, MATCH(submission_id, Vectorization!$A$2:$A$1000, 0) +1,  // Adjust based on Vectorization data
-    vector_hist, INDEX(Vectorization!$B$2:$Z$1000, row_num -1, 0),  // Adjust columns based on keywords
-    
-    dot_product, SUM(vector_new * vector_hist),
-    magnitude_new, SQRT(SUM(vector_new * vector_new)),
-    magnitude_hist, SQRT(SUM(vector_hist * vector_hist)),
-    similarity, IF(magnitude_new * magnitude_hist = 0, 0, dot_product / (magnitude_new * magnitude_hist)),
-    similarity
+D2: =IFERROR(
+    SUMPRODUCT(
+        (Vectorization!B2:Z2) * Vectorization_New!B$2:Z$2
+    ) / (
+        SQRT(SUM(Vectorization!B2:Z2^2)) * SQRT(SUM(Vectorization_New!B$2:Z$2^2))
+    ),
+    0
 )
+
 
 
 // Combined score weights category matches more heavily
@@ -104,36 +93,6 @@ E2: =D2*(1 + B2*0.5 + C2*0.3)
 
 F2: =XLOOKUP(A2,Historical_Data[SubmissionID],Historical_Data[Reviewed with])
 ```
-ALTERNATIVE:
-
-// For cell B2 (Category Match):
-=IF(Historical_Data[Category]=New_Submission!$B$3, 1, 0)
-
-// For cell C2 (Subcategory Match):
-=IF(Historical_Data[Subcategory]=New_Submission!$B$4, 1, 0)
-
-// For cell D2 (Vector Match - new submission):
-=LET(
-    new_title, UPPER(New_Submission!B1),
-    new_description, UPPER(New_Submission!B2),
-    new_text, new_title & " " & new_description,
-    keywords, UPPER(Keywords!$A$2:$A$1000),
-    shorthands, UPPER(Keywords!$B$2:$B$1000),
-    combined_keywords, IF(shorthands="", keywords, shorthands),
-    keyword_presence_new, --(ISNUMBER(SEARCH(keywords, new_text)) + ISNUMBER(SEARCH(shorthands, new_text)) > 0),
-    vector_new, keyword_presence_new,
-    
-    submission_id, A2,
-    row_num, MATCH(submission_id, Vectorization!$A$2:$A$1000, 0) +1,  // Adjust based on Vectorization data
-    vector_hist, INDEX(Vectorization!$B$2:$Z$1000, row_num -1, 0),  // Adjust columns based on keywords
-    
-    dot_product, SUM(vector_new * vector_hist),
-    magnitude_new, SQRT(SUM(vector_new * vector_new)),
-    magnitude_hist, SQRT(SUM(vector_hist * vector_hist)),
-    similarity, IF(magnitude_new * magnitude_hist = 0, 0, dot_product / (magnitude_new * magnitude_hist)),
-    similarity
-)
-
 
 // For cell E2 (Magnitude of new submission vector):
 =SQRT(SUMPRODUCT(D2:D2))
