@@ -58,10 +58,11 @@ B2: =LET(
     text, UPPER(Historical_Data[SubmissionTitle]&" "&Historical_Data[Submission Description]),
     keywords, TRANSPOSE(UPPER(Keywords[Keyword])),
     shorthand, TRANSPOSE(UPPER(Keywords[Shorthand])),
-    OR(
+    result, OR(
         ISNUMBER(SEARCH(keywords,text)),
         ISNUMBER(SEARCH(shorthand,text))
-    )
+    ),
+    result
 )
 ```
 
