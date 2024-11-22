@@ -55,12 +55,12 @@ A1: "SubmissionID"
 B1: =TRANSPOSE(Keywords[Keyword])
 A2: =Historical_Data[SubmissionID]
 B2: =LET(
-    submission_text, UPPER($Historical_Data[[SubmissionTitle]:[Submission Description]][ROW()-1]),
+    text, UPPER(CONCAT(INDIRECT("Historical_Data[SubmissionTitle]"&ROW()-1&"]"), " ", INDIRECT("Historical_Data[Submission Description]"&ROW()-1&"]"))),
     keyword, UPPER(B$1),
     shorthand, UPPER(XLOOKUP(B$1, Keywords[Keyword], Keywords[Shorthand], "")),
     OR(
-        ISNUMBER(SEARCH(keyword, submission_text)),
-        IF(shorthand="", FALSE, ISNUMBER(SEARCH(shorthand, submission_text)))
+        ISNUMBER(SEARCH(keyword, text)),
+        IF(shorthand="", FALSE, ISNUMBER(SEARCH(shorthand, text)))
     )
 )
 ```
