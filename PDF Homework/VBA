@@ -109,9 +109,13 @@ ALTERNATIVE:
 // For cell D2 (Vector Match - new submission):
 =LET(
     text, UPPER($'New_Submission'.$B$1&" "&$'New_Submission'.$B$2),
-    keywords, TRANSPOSE(UPPER(Keywords[Keyword])),
-    shorthand, TRANSPOSE(UPPER(Keywords[Shorthand])),
-    NOT(ISERROR(SEARCH(keywords,text))) + NOT(ISERROR(SEARCH(shorthand,text)))
+    keyword, UPPER(INDEX(Keywords[Keyword], ROW()-1)),
+    shorthand, UPPER(INDEX(Keywords[Shorthand], ROW()-1)),
+    result, OR(
+        ISNUMBER(FIND(keyword, text)),
+        IF(shorthand="", FALSE, ISNUMBER(FIND(shorthand, text)))
+    ),
+    result
 )
 
 // For cell E2 (Magnitude of new submission vector):
