@@ -98,6 +98,39 @@ E2: =D2*(1 + B2*0.5 + C2*0.3)
 
 F2: =XLOOKUP(A2,Historical_Data[SubmissionID],Historical_Data[Reviewed with])
 ```
+ALTERNATIVE:
+
+// For cell B2 (Category Match):
+=IF(Historical_Data[Category]=New_Submission!$B$3, 1, 0)
+
+// For cell C2 (Subcategory Match):
+=IF(Historical_Data[Subcategory]=New_Submission!$B$4, 1, 0)
+
+// For cell D2 (Vector Match - new submission):
+=LET(
+    text, UPPER($'New_Submission'.$B$1&" "&$'New_Submission'.$B$2),
+    keywords, TRANSPOSE(UPPER(Keywords[Keyword])),
+    shorthand, TRANSPOSE(UPPER(Keywords[Shorthand])),
+    NOT(ISERROR(SEARCH(keywords,text))) + NOT(ISERROR(SEARCH(shorthand,text)))
+)
+
+// For cell E2 (Magnitude of new submission vector):
+=SQRT(SUMPRODUCT(D2:D2))
+
+// For cell F2 (Magnitude of historical vector):
+=SQRT(SUMPRODUCT(Vectorization!B2:XFD2))
+
+// For cell G2 (Dot Product):
+=SUMPRODUCT(D2:D2, Vectorization!B2:XFD2)
+
+// For cell H2 (Similarity Score):
+=IF(AND(E2>0,F2>0), G2/(E2*F2), 0)
+
+// For cell I2 (Combined Score):
+=H2*(1 + B2*0.5 + C2*0.3)
+
+// For cell J2 (Reviewed With):
+=XLOOKUP(A2, Historical_Data[SubmissionID], Historical_Data[Reviewed with])
 
 7. Create Top 10 Results section:
 ```
