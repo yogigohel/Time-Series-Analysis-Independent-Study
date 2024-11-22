@@ -108,15 +108,23 @@ ALTERNATIVE:
 
 // For cell D2 (Vector Match - new submission):
 =LET(
-    text, UPPER($'New_Submission'.$B$1&" "&$'New_Submission'.$B$2),
-    keyword, UPPER(INDEX(Keywords[Keyword], ROW()-1)),
-    shorthand, UPPER(INDEX(Keywords[Shorthand], ROW()-1)),
-    result, OR(
-        ISNUMBER(FIND(keyword, text)),
-        IF(shorthand="", FALSE, ISNUMBER(FIND(shorthand, text)))
-    ),
-    result
+    new_text, UPPER(New_Submission!B1 & " " & New_Submission!B2),
+    keywords_upper, UPPER(Keywords!$A$2:$A$1000),
+    shorthand_upper, UPPER(Keywords!$B$2:$B$1000),
+    
+    keyword_present, --(ISNUMBER(SEARCH(keywords_upper, new_text))),
+    shorthand_present, --(ISNUMBER(SEARCH(shorthand_upper, new_text))),
+    new_vector, --((keyword_present + shorthand_present) > 0),
+    
+    hist_vector, INDEX(Vectorization!$B$2:$Z$1000, MATCH(A2, Vectorization!$A$2:$A$1000, 0), ),
+    
+    dot_product, SUMPRODUCT(new_vector, hist_vector),
+    magnitude1, SQRT(SUMPRODUCT(new_vector, new_vector)),
+    magnitude2, SQRT(SUMPRODUCT(hist_vector, hist_vector)),
+    
+    IF(magnitude1 * magnitude2 = 0, 0, dot_product / (magnitude1 * magnitude2))
 )
+
 
 // For cell E2 (Magnitude of new submission vector):
 =SQRT(SUMPRODUCT(D2:D2))
