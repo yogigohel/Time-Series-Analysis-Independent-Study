@@ -1,287 +1,94 @@
-Option Explicit
+I'll help you create an Excel workbook that efficiently handles cosine matching for submission routing. Here's a step-by-step implementation:
 
-Sub ImportFile(filePath As String, sheetName As String)
-    Dim wbSource As Workbook
-    Dim wsSource As Worksheet
-    Dim wsDest As Worksheet
-    Application.ScreenUpdating = False
+1. Structure Setup:
+- Sheet 1: "Keywords" table with columns "Keyword" and "Shorthand"
+- Sheet 2: "Historical_Data" with your 4 columns
+- Sheet 3: "New_Submission" for input
+- Sheet 4: "Vectorization" for calculations
+- Sheet 5: "Results" for top 10 matches
 
-    ' Check if sheet with sheetName already exists
-    Dim ws As Worksheet
-    On Error Resume Next
-    Set ws = ThisWorkbook.Sheets(sheetName)
-    On Error GoTo 0
-    If Not ws Is Nothing Then
-        ' Sheet exists, delete it
-        Application.DisplayAlerts = False
-        ws.Delete
-        Application.DisplayAlerts = True
-    End If
+2. Create Dynamic Named Ranges:
+```
+Keywords_Range = Keywords[Keyword]
+Shorthand_Range = Keywords[Shorthand]
+Historical_Range = Historical_Data[#All]
+```
 
-    Set wbSource = Workbooks.Open(filePath, ReadOnly:=True)
-    Set wsSource = wbSource.Sheets(1) ' Assume data is in the first sheet
+3. On "Vectorization" sheet, create a keyword presence matrix:
+```
+A1: "SubmissionID"
+B1: =TRANSPOSE(Keywords[Keyword])
+A2: =Historical_Data[SubmissionID]
+B2: =LET(
+    text, UPPER(Historical_Data[SubmissionTitle]&" "&Historical_Data[Submission Description]),
+    keywords, TRANSPOSE(UPPER(Keywords[Keyword])),
+    shorthand, TRANSPOSE(UPPER(Keywords[Shorthand])),
+    OR(
+        ISNUMBER(SEARCH(keywords,text)),
+        ISNUMBER(SEARCH(shorthand,text))
+    )
+)
+```
 
-    ' Copy the sheet to the current workbook
-    wsSource.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
-    Set wsDest = ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
-    wsDest.Name = sheetName
+4. On "New_Submission" sheet:
+```
+A1: "Title"
+A2: "Description"
+B1: [Input cell for new submission title]
+B2: [Input cell for new submission description]
+```
 
-    wbSource.Close SaveChanges:=False
-    Application.ScreenUpdating = True
-End Sub
+5. Calculate cosine similarity:
+On "Results" sheet:
+```
+A1: "Historical_ID"
+B1: "Similarity_Score"
+C1: "Reviewed_With"
 
-Sub CreateTableFromSheet(sheetName As String)
-    Dim ws As Worksheet
-    Dim lo As ListObject
-    Dim tblName As String
-    Set ws = ThisWorkbook.Sheets(sheetName)
-    tblName = sheetName
+A2: =Historical_Data[SubmissionID]
 
-    ' Check if the sheet already contains a table
-    If ws.ListObjects.Count > 0 Then
-        ' Rename the existing table
-        ws.ListObjects(1).Name = tblName
-    Else
-        ' Create a new table
-        Set lo = ws.ListObjects.Add(xlSrcRange, ws.Range("A1").CurrentRegion, , xlYes)
-        lo.Name = tblName
-    End If
-End Sub
+B2: =LET(
+    new_text, UPPER($'New_Submission'.$B$1&" "&$'New_Submission'.$B$2),
+    new_vector, OR(
+        ISNUMBER(SEARCH(TRANSPOSE(UPPER(Keywords[Keyword])),new_text)),
+        ISNUMBER(SEARCH(TRANSPOSE(UPPER(Keywords[Shorthand])),new_text))
+    ),
+    hist_vector, INDEX(Vectorization!B2:XFD2,ROW()-1,),
+    dot_product, MMULT(new_vector,TRANSPOSE(hist_vector)),
+    magnitude1, SQRT(MMULT(new_vector,TRANSPOSE(new_vector))),
+    magnitude2, SQRT(MMULT(hist_vector,TRANSPOSE(hist_vector))),
+    dot_product/(magnitude1*magnitude2)
+)
 
-Sub ManipulateData()
-    ' New Step: Remove IRA accounts from Relationships table
-    RemoveIRAAccounts
+C2: =XLOOKUP(A2,Historical_Data[SubmissionID],Historical_Data[Reviewed with])
+```
 
-    ' Proceed with the rest of the operations
-    RearrangeColumns
-    CreateNewColumns
-    PopulateDataWithoutSUMIF
-    UnitTest
-End Sub
+6. Create Top 10 Results section:
+```
+E1: "Top 10 Suggested Reviewers"
+E2: =SORT(
+    FILTER(
+        C2:C1000,
+        B2:B1000>0
+    ),
+    FILTER(
+        B2:B1000,
+        B2:B1000>0
+    ),
+    -1
+)
+```
 
-Sub RemoveIRAAccounts()
-    Dim loRelationships As ListObject
-    Dim i As Long
-    Dim acctName As String
-    Dim regEx As Object
-    Dim ws As Worksheet
+Key Features of this Implementation:
+- Uses array formulas for efficient processing
+- Dynamically handles new keywords and historical data
+- Considers both full keywords and shorthand variations
+- Automatically updates when new submissions are entered
+- Maintains calculation speed through optimized array operations
 
-    Set ws = ThisWorkbook.Sheets("Relationships")
-    Set loRelationships = ws.ListObjects("Relationships")
+Performance Optimization Tips:
+- Use structured tables for easy maintenance
+- Keep calculation mode on automatic unless updating large datasets
+- If performance slows, consider splitting calculations across multiple helper columns
 
-    ' Initialize Regular Expression object
-    Set regEx = CreateObject("VBScript.RegExp")
-    With regEx
-        .Pattern = "\bIRA\b" ' Matches "IRA" as a whole word
-        .IgnoreCase = True
-        .Global = False
-    End With
-
-    ' Loop backwards to avoid skipping rows after deletion
-    For i = loRelationships.DataBodyRange.Rows.Count To 1 Step -1
-        acctName = loRelationships.DataBodyRange.Cells(i, loRelationships.ListColumns("Acct Name").Index).Value
-        If regEx.Test(acctName) Then
-            ' Delete the entire row from the table
-            loRelationships.ListRows(i).Delete
-        End If
-    Next i
-End Sub
-
-Sub RearrangeColumns()
-    Dim ws As Worksheet
-    Dim lo As ListObject
-    Dim colIndex As Long
-    Dim destIndex As Long
-
-    Set ws = ThisWorkbook.Sheets("Relationships")
-    Set lo = ws.ListObjects("Relationships")
-
-    ' Find the column "Master Account Name"
-    colIndex = lo.ListColumns("Master Account Name").Index
-    ' Move it to be the third column
-    destIndex = 3
-
-    If colIndex <> destIndex Then
-        lo.ListColumns("Master Account Name").Range.Cut
-        lo.ListColumns(destIndex).Range.Insert Shift:=xlToRight
-        Application.CutCopyMode = False
-    End If
-End Sub
-
-Sub CreateNewColumns()
-    Dim loRelationships As ListObject
-
-    Set loRelationships = ThisWorkbook.Sheets("Relationships").ListObjects("Relationships")
-
-    ' Insert columns as per instructions
-    InsertNewColumn loRelationships, 4, "Unrealized Short Term Losses"
-    InsertNewColumn loRelationships, 5, "Unrealized Long Term Losses"
-    InsertNewColumn loRelationships, 6, "Total Unrealized Losses"
-    InsertNewColumn loRelationships, 7, "Unrealized Losses MA"
-    InsertNewColumn loRelationships, 8, "Realized Gain/Loss"
-    InsertNewColumn loRelationships, 9, "Realized Gains/Losses MA"
-End Sub
-
-Sub InsertNewColumn(lo As ListObject, position As Long, headerName As String)
-    ' Insert a new column at specified position with the given header
-    lo.ListColumns.Add position:=position
-    lo.HeaderRowRange.Cells(1, position).Value = headerName
-End Sub
-
-Sub PopulateDataWithoutSUMIF()
-    Dim wsHoldings As Worksheet
-    Dim wsRelationships As Worksheet
-    Dim loHoldings As ListObject
-    Dim loRelationships As ListObject
-
-    Set wsHoldings = ThisWorkbook.Sheets("Holdings")
-    Set wsRelationships = ThisWorkbook.Sheets("Relationships")
-    Set loHoldings = wsHoldings.ListObjects("Holdings")
-    Set loRelationships = wsRelationships.ListObjects("Relationships")
-
-    ' Create Dictionaries to store sums
-    Dim dictUSTLosses As Object
-    Dim dictULTLosses As Object
-    Dim dictTotalUnrealizedLossesMA As Object
-    Dim dictRealizedGainsLossesMA As Object
-
-    Set dictUSTLosses = CreateObject("Scripting.Dictionary")
-    Set dictULTLosses = CreateObject("Scripting.Dictionary")
-    Set dictTotalUnrealizedLossesMA = CreateObject("Scripting.Dictionary")
-    Set dictRealizedGainsLossesMA = CreateObject("Scripting.Dictionary")
-
-    ' Step 1: Compute Unrealized Losses per Account#
-    Dim i As Long
-    Dim acctNum As Variant
-    Dim ustGainLoss As Double
-    Dim ultGainLoss As Double
-
-    With loHoldings.DataBodyRange
-        For i = 1 To .Rows.Count
-            acctNum = .Cells(i, loHoldings.ListColumns("Account#").Index).Value
-
-            ' Unrealized Short Term Gain/Loss
-            ustGainLoss = .Cells(i, loHoldings.ListColumns("Unrealized ShortTerm Gain/Loss").Index).Value
-            If IsNumeric(ustGainLoss) And ustGainLoss < 0 Then
-                If dictUSTLosses.Exists(acctNum) Then
-                    dictUSTLosses(acctNum) = dictUSTLosses(acctNum) + ustGainLoss
-                Else
-                    dictUSTLosses.Add acctNum, ustGainLoss
-                End If
-            End If
-
-            ' Unrealized Long Term Gain/Loss
-            ultGainLoss = .Cells(i, loHoldings.ListColumns("Unrealized LongTerm Gain/Loss").Index).Value
-            If IsNumeric(ultGainLoss) And ultGainLoss < 0 Then
-                If dictULTLosses.Exists(acctNum) Then
-                    dictULTLosses(acctNum) = dictULTLosses(acctNum) + ultGainLoss
-                Else
-                    dictULTLosses.Add acctNum, ultGainLoss
-                End If
-            End If
-        Next i
-    End With
-
-    ' Step 2: Populate Unrealized Losses in Relationships Table
-    Dim accountNumber As Variant
-    Dim masterAccountName As String
-    Dim totalUnrealizedLoss As Double
-    Dim realizedGainLoss As Double
-    Dim gainLossSTYtd As Double
-    Dim gainLossLTYtd As Double
-
-    With loRelationships.DataBodyRange
-        For i = 1 To .Rows.Count
-            accountNumber = .Cells(i, loRelationships.ListColumns("Account#").Index).Value
-            masterAccountName = .Cells(i, loRelationships.ListColumns("Master Account Name").Index).Value
-
-            ' Unrealized Short Term Losses
-            If dictUSTLosses.Exists(accountNumber) Then
-                .Cells(i, loRelationships.ListColumns("Unrealized Short Term Losses").Index).Value = dictUSTLosses(accountNumber)
-            Else
-                .Cells(i, loRelationships.ListColumns("Unrealized Short Term Losses").Index).Value = 0
-            End If
-
-            ' Unrealized Long Term Losses
-            If dictULTLosses.Exists(accountNumber) Then
-                .Cells(i, loRelationships.ListColumns("Unrealized Long Term Losses").Index).Value = dictULTLosses(accountNumber)
-            Else
-                .Cells(i, loRelationships.ListColumns("Unrealized Long Term Losses").Index).Value = 0
-            End If
-
-            ' Total Unrealized Losses
-            totalUnrealizedLoss = .Cells(i, loRelationships.ListColumns("Unrealized Short Term Losses").Index).Value + _
-                                  .Cells(i, loRelationships.ListColumns("Unrealized Long Term Losses").Index).Value
-            .Cells(i, loRelationships.ListColumns("Total Unrealized Losses").Index).Value = totalUnrealizedLoss
-
-            ' Accumulate Total Unrealized Losses by Master Account Name
-            If dictTotalUnrealizedLossesMA.Exists(masterAccountName) Then
-                dictTotalUnrealizedLossesMA(masterAccountName) = dictTotalUnrealizedLossesMA(masterAccountName) + totalUnrealizedLoss
-            Else
-                dictTotalUnrealizedLossesMA.Add masterAccountName, totalUnrealizedLoss
-            End If
-
-            ' Realized Gain/Loss
-            gainLossSTYtd = .Cells(i, loRelationships.ListColumns("Gain/Loss Short Term Ytd").Index).Value
-            gainLossLTYtd = .Cells(i, loRelationships.ListColumns("Gain/Loss Long Term Ytd").Index).Value
-
-            If Not IsNumeric(gainLossSTYtd) Then gainLossSTYtd = 0
-            If Not IsNumeric(gainLossLTYtd) Then gainLossLTYtd = 0
-
-            realizedGainLoss = gainLossSTYtd + gainLossLTYtd
-            .Cells(i, loRelationships.ListColumns("Realized Gain/Loss").Index).Value = realizedGainLoss
-
-            ' Accumulate Realized Gain/Loss by Master Account Name
-            If dictRealizedGainsLossesMA.Exists(masterAccountName) Then
-                dictRealizedGainsLossesMA(masterAccountName) = dictRealizedGainsLossesMA(masterAccountName) + realizedGainLoss
-            Else
-                dictRealizedGainsLossesMA.Add masterAccountName, realizedGainLoss
-            End If
-        Next i
-    End With
-
-    ' Step 3: Populate Unrealized Losses MA and Realized Gains/Losses MA
-    With loRelationships.DataBodyRange
-        For i = 1 To .Rows.Count
-            masterAccountName = .Cells(i, loRelationships.ListColumns("Master Account Name").Index).Value
-
-            ' Unrealized Losses MA
-            If dictTotalUnrealizedLossesMA.Exists(masterAccountName) Then
-                .Cells(i, loRelationships.ListColumns("Unrealized Losses MA").Index).Value = dictTotalUnrealizedLossesMA(masterAccountName)
-            Else
-                .Cells(i, loRelationships.ListColumns("Unrealized Losses MA").Index).Value = 0
-            End If
-
-            ' Realized Gains/Losses MA
-            If dictRealizedGainsLossesMA.Exists(masterAccountName) Then
-                .Cells(i, loRelationships.ListColumns("Realized Gains/Losses MA").Index).Value = dictRealizedGainsLossesMA(masterAccountName)
-            Else
-                .Cells(i, loRelationships.ListColumns("Realized Gains/Losses MA").Index).Value = 0
-            End If
-        Next i
-    End With
-End Sub
-
-Sub UnitTest()
-    ' Check that the columns have been added
-    Dim loRelationships As ListObject
-    Set loRelationships = ThisWorkbook.Sheets("Relationships").ListObjects("Relationships")
-
-    Dim requiredColumns As Variant
-    requiredColumns = Array("Unrealized Short Term Losses", "Unrealized Long Term Losses", "Total Unrealized Losses", "Unrealized Losses MA", "Realized Gain/Loss", "Realized Gains/Losses MA")
-
-    Dim i As Long
-    Dim colExists As Boolean
-    For i = LBound(requiredColumns) To UBound(requiredColumns)
-        colExists = False
-        On Error Resume Next
-        colExists = Not loRelationships.ListColumns(requiredColumns(i)) Is Nothing
-        On Error GoTo 0
-        If Not colExists Then
-            MsgBox "Column '" & requiredColumns(i) & "' is missing in Relationships table.", vbCritical
-            Exit Sub
-        End If
-    Next i
-
-    MsgBox "Unit test passed. All required columns are present.", vbInformation
-End Sub
+Note: Adjust range references (like C2:C1000) based on your actual data size. The formulas use structured references where possible to maintain dynamism.
