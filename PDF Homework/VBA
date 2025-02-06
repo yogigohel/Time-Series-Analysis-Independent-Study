@@ -1,116 +1,112 @@
 Option Explicit
 
-'---------------------------------------------------------------------------------
-' modDataUpload: Processes the uploaded workbook and merges new accounts into "Account Data."
-'---------------------------------------------------------------------------------
+Private selectedFilePath As String
+Private collOverwrites As Collection ' used if user chooses to overwrite duplicates
 
-Public Sub ProcessUpload(ByVal sourceFilePath As String, _
-                         ByVal allowDuplicates As Boolean, _
-                         ByVal overwrites As Collection)
-    ' sourceFilePath: The file path the user selected
-    ' allowDuplicates: True if the user wants to consider overwriting duplicates
-    ' overwrites: A collection mapping "RelNum|MasterID|AcctNum" -> Boolean (True=overwrite)
+'---------------------------------------------------------------------------------
+' The UserForm_Initialize or UserForm_Activate can reset form controls each time
+'---------------------------------------------------------------------------------
+Private Sub UserForm_Initialize()
+    Me.lblFilePath.Caption = ""
+    Me.chkAllowDuplicates.Value = False
+    Me.lstPreview.Clear
+    Set collOverwrites = New Collection
+End Sub
+
+'---------------------------------------------------------------------------------
+' Button: Browse File
+'---------------------------------------------------------------------------------
+Private Sub cmdBrowseFile_Click()
+    Dim fd As FileDialog
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
     
-    Dim wbSource As Workbook
-    Dim wsSource As Worksheet
-    Dim wsDest As Worksheet
-    Dim lastRowSource As Long
+    With fd
+        .Title = "Select the Accounts File"
+        .Filters.Clear
+        .Filters.Add "Excel Files", "*.xlsx; *.xlsm; *.csv", 1
+        .AllowMultiSelect = False
+        
+        If .Show = -1 Then ' user clicked OK
+            selectedFilePath = .SelectedItems(1)
+            Me.lblFilePath.Caption = selectedFilePath
+            
+            ' Optionally load preview
+            PreviewData selectedFilePath
+        End If
+    End With
+End Sub
+
+'---------------------------------------------------------------------------------
+' Subroutine: PreviewData
+' Reads the source file to identify "NEW" vs "DUPLICATE" and shows it in the ListBox.
+'---------------------------------------------------------------------------------
+Private Sub PreviewData(ByVal filePath As String)
+    Dim wbTemp As Workbook, wsTemp As Worksheet
+    Dim lastRow As Long
     Dim i As Long
     
     Application.ScreenUpdating = False
+    Set wbTemp = Workbooks.Open(filePath, ReadOnly:=True)
+    Set wsTemp = wbTemp.Sheets(1)
     
-    ' 1) Open the source workbook in read-only mode
-    Set wbSource = Workbooks.Open(Filename:=sourceFilePath, ReadOnly:=True)
-    Set wsSource = wbSource.Sheets(1) ' we assume data is on the first sheet
-    Set wsDest = ThisWorkbook.Sheets(SH_ACCOUNT_DATA)
+    lastRow = wsTemp.Cells(wsTemp.Rows.Count, 1).End(xlUp).Row
     
-    ' 2) Determine the last used row in the source
-    lastRowSource = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    Me.lstPreview.Clear
     
-    ' 3) Loop through each row in the source (assuming row 1 is headers)
+    ' We'll set column widths for better visibility (units: points)
+    Me.lstPreview.ColumnCount = 6
+    Me.lstPreview.ColumnWidths = "70;120;70;120;70;80"
+    
     Dim relNum As String, relName As String
     Dim masterID As String, masterName As String
     Dim acctNum As String, acctName As String
     Dim existingRow As Long
-    Dim destLastRow As Long
     
-    For i = 2 To lastRowSource
-        relNum = CStr(wsSource.Cells(i, 1).Value)      ' Relationship#
-        relName = CStr(wsSource.Cells(i, 2).Value)     ' Relationship Name
-        masterID = CStr(wsSource.Cells(i, 3).Value)    ' Master Account ID
-        masterName = CStr(wsSource.Cells(i, 4).Value)  ' Master Account Name
-        acctNum = CStr(wsSource.Cells(i, 5).Value)     ' Account#
-        acctName = CStr(wsSource.Cells(i, 6).Value)    ' Acct Name
+    For i = 2 To lastRow
+        relNum = CStr(wsTemp.Cells(i, 1).Value)
+        relName = CStr(wsTemp.Cells(i, 2).Value)
+        masterID = CStr(wsTemp.Cells(i, 3).Value)
+        masterName = CStr(wsTemp.Cells(i, 4).Value)
+        acctNum = CStr(wsTemp.Cells(i, 5).Value)
+        acctName = CStr(wsTemp.Cells(i, 6).Value)
         
         existingRow = FindAccountRow(relNum, masterID, acctNum)
         
+        Dim previewString As String
         If existingRow = 0 Then
-            ' -> NEW ACCOUNT
-            destLastRow = wsDest.Cells(wsDest.Rows.Count, acRelNum).End(xlUp).Row + 1
-            
-            wsDest.Cells(destLastRow, acRelNum).Value = relNum
-            wsDest.Cells(destLastRow, acRelName).Value = relName
-            wsDest.Cells(destLastRow, acMasterID).Value = masterID
-            wsDest.Cells(destLastRow, acMasterName).Value = masterName
-            wsDest.Cells(destLastRow, acAcctNum).Value = acctNum
-            wsDest.Cells(destLastRow, acAcctName).Value = acctName
-            
-            ' Highlight new cells in a light-green color
-            HighlightCell wsDest.Cells(destLastRow, acRelNum), RGB(144, 238, 144)
-            HighlightCell wsDest.Cells(destLastRow, acRelName), RGB(144, 238, 144)
-            HighlightCell wsDest.Cells(destLastRow, acMasterID), RGB(144, 238, 144)
-            HighlightCell wsDest.Cells(destLastRow, acMasterName), RGB(144, 238, 144)
-            HighlightCell wsDest.Cells(destLastRow, acAcctNum), RGB(144, 238, 144)
-            HighlightCell wsDest.Cells(destLastRow, acAcctName), RGB(144, 238, 144)
-            
-            ' Log the new addition
-            LogChange "Import New Account", _
-                "Rel#: " & relNum & "; Master: " & masterID & "; Acct: " & acctNum
-            
-            ' TODO: If you'd like to highlight the parent Relationship in yellow,
-            ' you could add extra logic here to find existing rows with the same Relationship#,
-            ' etc. For Phase 2, we focus on green highlight for new items.
-        
+            previewString = relNum & vbTab & relName & vbTab & masterID & _
+                            vbTab & masterName & vbTab & acctNum & vbTab & "*NEW*"
         Else
-            ' -> DUPLICATE
-            If allowDuplicates Then
-                ' Check if user wants to overwrite
-                Dim key As String
-                key = relNum & "|" & masterID & "|" & acctNum
-                
-                If overwrites.Count > 0 Then
-                    If overwrites.Contains(key) Then
-                        If overwrites(key) = True Then
-                            ' Overwrite existing data
-                            Dim oldVal As String, newVal As String
-                            oldVal = wsDest.Cells(existingRow, acRelName).Value & " / " & _
-                                     wsDest.Cells(existingRow, acMasterName).Value & " / " & _
-                                     wsDest.Cells(existingRow, acAcctName).Value
-                                     
-                            wsDest.Cells(existingRow, acRelName).Value = relName
-                            wsDest.Cells(existingRow, acMasterName).Value = masterName
-                            wsDest.Cells(existingRow, acAcctNum).Value = acctNum
-                            wsDest.Cells(existingRow, acAcctName).Value = acctName
-                            
-                            newVal = relName & " / " & masterName & " / " & acctName
-                            
-                            LogChange "Overwrite Account", _
-                                "Rel#: " & relNum & "; Master: " & masterID & "; Acct: " & acctNum, _
-                                oldVal, newVal
-                            
-                            ' Highlight overwritten cells
-                            HighlightCell wsDest.Cells(existingRow, acRelName), RGB(144, 238, 144)
-                            HighlightCell wsDest.Cells(existingRow, acMasterName), RGB(144, 238, 144)
-                            HighlightCell wsDest.Cells(existingRow, acAcctName), RGB(144, 238, 144)
-                        End If
-                    End If
-                End If
-            End If
+            previewString = relNum & vbTab & relName & vbTab & masterID & _
+                            vbTab & masterName & vbTab & acctNum & vbTab & "*DUPLICATE*"
         End If
+        
+        Me.lstPreview.AddItem previewString
     Next i
     
-    ' 4) Close the source workbook without saving
-    wbSource.Close SaveChanges:=False
-    
+    wbTemp.Close False
     Application.ScreenUpdating = True
+End Sub
+
+'---------------------------------------------------------------------------------
+' Button: Import
+'---------------------------------------------------------------------------------
+Private Sub cmdImport_Click()
+    If selectedFilePath = "" Then
+        MsgBox "No file selected. Please browse for a file first.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Build an overwrites collection if you want more advanced logic to pick duplicates
+    ' For now, we'll pass an empty collection or a dummy one.
+    Set collOverwrites = New Collection
+    
+    Dim allowDup As Boolean
+    allowDup = Me.chkAllowDuplicates.Value
+    
+    ProcessUpload selectedFilePath, allowDup, collOverwrites
+    
+    MsgBox "Accounts have been uploaded successfully!", vbInformation
+    
+    Unload Me
 End Sub
