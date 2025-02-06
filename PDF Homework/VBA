@@ -1,158 +1,116 @@
 Option Explicit
 
-' Macro to copy specified columns from "Relationships" table to "Output" sheet
-Sub CopyRelationshipsToOutput()
-    Dim wb As Workbook
+'---------------------------------------------------------------------------------
+' modDataUpload: Processes the uploaded workbook and merges new accounts into "Account Data."
+'---------------------------------------------------------------------------------
+
+Public Sub ProcessUpload(ByVal sourceFilePath As String, _
+                         ByVal allowDuplicates As Boolean, _
+                         ByVal overwrites As Collection)
+    ' sourceFilePath: The file path the user selected
+    ' allowDuplicates: True if the user wants to consider overwriting duplicates
+    ' overwrites: A collection mapping "RelNum|MasterID|AcctNum" -> Boolean (True=overwrite)
+    
+    Dim wbSource As Workbook
     Dim wsSource As Worksheet
-    Dim wsOutput As Worksheet
-    Dim tbl As ListObject
-    Dim colNames As Variant
+    Dim wsDest As Worksheet
+    Dim lastRowSource As Long
     Dim i As Long
-    Dim lastRow As Long
-    Dim outputRange As Range
-    Dim outputTable As ListObject
-    Dim header As String
-    Dim srcCol As Range
-    Dim tblFound As Boolean
     
-    ' Define the columns in the specified order
-    colNames = Array( _
-        "Account#", _
-        "Acct Name", _
-        "Master Account Name", _
-        "Unrealised Short Term Losses", _
-        "Unrealised Long Term Losses", _
-        "Unrealized Losses", _
-        "Unrealized Losses MA", _
-        "Gains/Losses Short Term Ytd", _
-        "Gains/Losses Long Term Ytd", _
-        "Realized Gain/Loss", _
-        "Realized Gain/Losses MA" _
-    )
+    Application.ScreenUpdating = False
     
-    Set wb = ThisWorkbook
+    ' 1) Open the source workbook in read-only mode
+    Set wbSource = Workbooks.Open(Filename:=sourceFilePath, ReadOnly:=True)
+    Set wsSource = wbSource.Sheets(1) ' we assume data is on the first sheet
+    Set wsDest = ThisWorkbook.Sheets(SH_ACCOUNT_DATA)
     
-    ' Find the "Relationships" table in any worksheet
-    tblFound = False
-    For Each wsSource In wb.Worksheets
-        On Error Resume Next
-        Set tbl = wsSource.ListObjects("Relationships")
-        On Error GoTo 0
-        If Not tbl Is Nothing Then
-            tblFound = True
-            Exit For
+    ' 2) Determine the last used row in the source
+    lastRowSource = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    
+    ' 3) Loop through each row in the source (assuming row 1 is headers)
+    Dim relNum As String, relName As String
+    Dim masterID As String, masterName As String
+    Dim acctNum As String, acctName As String
+    Dim existingRow As Long
+    Dim destLastRow As Long
+    
+    For i = 2 To lastRowSource
+        relNum = CStr(wsSource.Cells(i, 1).Value)      ' Relationship#
+        relName = CStr(wsSource.Cells(i, 2).Value)     ' Relationship Name
+        masterID = CStr(wsSource.Cells(i, 3).Value)    ' Master Account ID
+        masterName = CStr(wsSource.Cells(i, 4).Value)  ' Master Account Name
+        acctNum = CStr(wsSource.Cells(i, 5).Value)     ' Account#
+        acctName = CStr(wsSource.Cells(i, 6).Value)    ' Acct Name
+        
+        existingRow = FindAccountRow(relNum, masterID, acctNum)
+        
+        If existingRow = 0 Then
+            ' -> NEW ACCOUNT
+            destLastRow = wsDest.Cells(wsDest.Rows.Count, acRelNum).End(xlUp).Row + 1
+            
+            wsDest.Cells(destLastRow, acRelNum).Value = relNum
+            wsDest.Cells(destLastRow, acRelName).Value = relName
+            wsDest.Cells(destLastRow, acMasterID).Value = masterID
+            wsDest.Cells(destLastRow, acMasterName).Value = masterName
+            wsDest.Cells(destLastRow, acAcctNum).Value = acctNum
+            wsDest.Cells(destLastRow, acAcctName).Value = acctName
+            
+            ' Highlight new cells in a light-green color
+            HighlightCell wsDest.Cells(destLastRow, acRelNum), RGB(144, 238, 144)
+            HighlightCell wsDest.Cells(destLastRow, acRelName), RGB(144, 238, 144)
+            HighlightCell wsDest.Cells(destLastRow, acMasterID), RGB(144, 238, 144)
+            HighlightCell wsDest.Cells(destLastRow, acMasterName), RGB(144, 238, 144)
+            HighlightCell wsDest.Cells(destLastRow, acAcctNum), RGB(144, 238, 144)
+            HighlightCell wsDest.Cells(destLastRow, acAcctName), RGB(144, 238, 144)
+            
+            ' Log the new addition
+            LogChange "Import New Account", _
+                "Rel#: " & relNum & "; Master: " & masterID & "; Acct: " & acctNum
+            
+            ' TODO: If you'd like to highlight the parent Relationship in yellow,
+            ' you could add extra logic here to find existing rows with the same Relationship#,
+            ' etc. For Phase 2, we focus on green highlight for new items.
+        
+        Else
+            ' -> DUPLICATE
+            If allowDuplicates Then
+                ' Check if user wants to overwrite
+                Dim key As String
+                key = relNum & "|" & masterID & "|" & acctNum
+                
+                If overwrites.Count > 0 Then
+                    If overwrites.Contains(key) Then
+                        If overwrites(key) = True Then
+                            ' Overwrite existing data
+                            Dim oldVal As String, newVal As String
+                            oldVal = wsDest.Cells(existingRow, acRelName).Value & " / " & _
+                                     wsDest.Cells(existingRow, acMasterName).Value & " / " & _
+                                     wsDest.Cells(existingRow, acAcctName).Value
+                                     
+                            wsDest.Cells(existingRow, acRelName).Value = relName
+                            wsDest.Cells(existingRow, acMasterName).Value = masterName
+                            wsDest.Cells(existingRow, acAcctNum).Value = acctNum
+                            wsDest.Cells(existingRow, acAcctName).Value = acctName
+                            
+                            newVal = relName & " / " & masterName & " / " & acctName
+                            
+                            LogChange "Overwrite Account", _
+                                "Rel#: " & relNum & "; Master: " & masterID & "; Acct: " & acctNum, _
+                                oldVal, newVal
+                            
+                            ' Highlight overwritten cells
+                            HighlightCell wsDest.Cells(existingRow, acRelName), RGB(144, 238, 144)
+                            HighlightCell wsDest.Cells(existingRow, acMasterName), RGB(144, 238, 144)
+                            HighlightCell wsDest.Cells(existingRow, acAcctName), RGB(144, 238, 144)
+                        End If
+                    End If
+                End If
+            End If
         End If
-    Next wsSource
-    
-    If Not tblFound Then
-        MsgBox "Table 'Relationships' not found.", vbExclamation
-        Exit Sub
-    End If
-    
-    ' Create or clear the "Output" sheet
-    On Error Resume Next
-    Set wsOutput = wb.Worksheets("Output")
-    On Error GoTo 0
-    
-    If wsOutput Is Nothing Then
-        Set wsOutput = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-        wsOutput.Name = "Output"
-    Else
-        wsOutput.Cells.Clear
-    End If
-    
-    ' Copy the headers and data
-    For i = LBound(colNames) To UBound(colNames)
-        header = colNames(i)
-        On Error Resume Next
-        Set srcCol = tbl.ListColumns(header).DataBodyRange
-        On Error GoTo 0
-        
-        If srcCol Is Nothing Then
-            MsgBox "Column '" & header & "' not found in 'Relationships' table.", vbExclamation
-            Exit Sub
-        End If
-        
-        ' Copy header
-        wsOutput.Cells(1, i + 1).Value = header
-        
-        ' Copy data
-        srcCol.Copy Destination:=wsOutput.Cells(2, i + 1)
-        
-        Set srcCol = Nothing
     Next i
     
-    ' Determine the last row with data
-    lastRow = wsOutput.Cells(wsOutput.Rows.Count, 1).End(xlUp).Row
+    ' 4) Close the source workbook without saving
+    wbSource.Close SaveChanges:=False
     
-    ' Define the output range
-    Set outputRange = wsOutput.Range(wsOutput.Cells(1, 1), wsOutput.Cells(lastRow, UBound(colNames) + 1))
-    
-    ' Convert the range to a table
-    Set outputTable = wsOutput.ListObjects.Add(xlSrcRange, outputRange, , xlYes)
-    outputTable.Name = "OutputTable"
-    
-    ' Set the font to "Connections"
-    outputRange.Font.Name = "Connections"
-    
-    ' Auto-fit columns for better readability
-    outputRange.Columns.AutoFit
-    
-    ' Apply alternating white and light gray shading
-    ' Using a built-in table style that closely matches the desired shading
-    outputTable.TableStyle = "TableStyleLight9" ' You can change this to another style if preferred
-    
-    MsgBox "Data successfully copied to the 'Output' sheet.", vbInformation
-End Sub
-
-' Macro to export the "Output" sheet as a PDF
-Sub ExportReportToPDF()
-    Dim wb As Workbook
-    Dim wsOutput As Worksheet
-    Dim pdfPath As String
-    Dim fDialog As FileDialog
-    Dim savePath As String
-    
-    Set wb = ThisWorkbook
-    
-    ' Check if "Output" sheet exists
-    On Error Resume Next
-    Set wsOutput = wb.Worksheets("Output")
-    On Error GoTo 0
-    
-    If wsOutput Is Nothing Then
-        MsgBox "'Output' sheet not found. Please run the copy macro first.", vbExclamation
-        Exit Sub
-    End If
-    
-    ' Prompt user to select save location
-    Set fDialog = Application.FileDialog(msoFileDialogSaveAs)
-    With fDialog
-        .Title = "Save PDF Report"
-        .Filters.Clear
-        .Filters.Add "PDF Files", "*.pdf"
-        .FilterIndex = 1
-        .InitialFileName = "Gains_Losses_Report.pdf"
-        If .Show <> -1 Then
-            ' User cancelled
-            Exit Sub
-        End If
-        savePath = .SelectedItems(1)
-        ' Ensure the file has .pdf extension
-        If LCase(Right(savePath, 4)) <> ".pdf" Then
-            savePath = savePath & ".pdf"
-        End If
-    End With
-    
-    ' Export the "Output" sheet as PDF
-    On Error GoTo ExportError
-    wsOutput.ExportAsFixedFormat Type:=xlTypePDF, Filename:=savePath, _
-        Quality:=xlQualityStandard, IncludeDocProperties:=True, _
-        IgnorePrintAreas:=False, OpenAfterPublish:=True
-    
-    MsgBox "Report successfully exported to:" & vbCrLf & savePath, vbInformation
-    Exit Sub
-    
-ExportError:
-    MsgBox "An error occurred while exporting the PDF.", vbCritical
+    Application.ScreenUpdating = True
 End Sub
