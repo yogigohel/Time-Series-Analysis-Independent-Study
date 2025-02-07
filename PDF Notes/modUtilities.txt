@@ -1,0 +1,119 @@
+Option Explicit
+
+'---------------------------------------------------------------------------------
+' modDataUpload (UPDATED)
+' 1) Maps columns by header name in the external file (like the userform logic).
+' 2) Imports only NEW or CHANGED rows into "Account Data."
+'    - If allowDuplicates=True and the user wants to overwrite, set collOverwrites appropriately.
+' 3) Leaves REMOVED items alone (or you can add logic to delete them if desired).
+'---------------------------------------------------------------------------------
+
+Public Sub ProcessUpload(ByVal sourceFilePath As String, _
+                         ByVal allowDuplicates As Boolean, _
+                         ByVal overwrites As Collection)
+    On Error GoTo ErrorHandler
+    
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+    Dim wsDest As Worksheet
+    Dim lastRowSource As Long
+    Dim lastColSource As Long
+    Dim i As Long
+    
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    
+    ' 1) Open the source workbook
+    Set wbSource = Workbooks.Open(Filename:=sourceFilePath, ReadOnly:=True)
+    Set wsSource = wbSource.Sheets(1)
+    Set wsDest = ThisWorkbook.Sheets(SH_ACCOUNT_DATA)
+    
+    ' Map columns by header name
+    lastColSource = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
+    Dim colMap As Collection
+    Set colMap = MapColumns(wsSource, lastColSource)  ' same function used in frmUpload
+    
+    lastRowSource = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    
+    ' 2) Loop through each row in the external file
+    For i = 2 To lastRowSource
+        Dim relNum As String, relName As String
+        Dim masterID As String, masterName As String
+        Dim acctNum As String, acctName As String
+        
+        relNum = CStr(wsSource.Cells(i, colMap("Relationship#")).Value)
+        relName = CStr(wsSource.Cells(i, colMap("Relationship Name")).Value)
+        masterID = CStr(wsSource.Cells(i, colMap("Master Account ID")).Value)
+        masterName = CStr(wsSource.Cells(i, colMap("Master Account Name")).Value)
+        acctNum = CStr(wsSource.Cells(i, colMap("Account#")).Value)
+        acctName = CStr(wsSource.Cells(i, colMap("Acct Name")).Value)
+        
+        Dim key As String
+        key = relNum & "|" & masterID & "|" & acctNum
+        
+        ' Check if it exists in the destination
+        Dim existingRow As Long
+        existingRow = FindAccountRow(relNum, masterID, acctNum)
+        
+        If existingRow = 0 Then
+            ' => NEW
+            Dim newRow As Long
+            newRow = wsDest.Cells(wsDest.Rows.Count, acRelNum).End(xlUp).Row + 1
+            
+            wsDest.Cells(newRow, acRelNum).Value = relNum
+            wsDest.Cells(newRow, acRelName).Value = relName
+            wsDest.Cells(newRow, acMasterID).Value = masterID
+            wsDest.Cells(newRow, acMasterName).Value = masterName
+            wsDest.Cells(newRow, acAcctNum).Value = acctNum
+            wsDest.Cells(newRow, acAcctName).Value = acctName
+            
+            ' Highlight in green
+            wsDest.Range(wsDest.Cells(newRow, acRelNum), _
+                         wsDest.Cells(newRow, acAcctName)).Interior.Color = RGB(144, 238, 144)
+            
+            LogChange "Import New Account", "Key=" & key
+        Else
+            ' => Possibly CHANGED/OVERWRITE
+            If allowDuplicates Then
+                If overwrites.Count > 0 And overwrites.Contains(key) Then
+                    If overwrites(key) = True Then
+                        ' Overwrite
+                        Dim oldVal As String, newVal As String
+                        
+                        oldVal = wsDest.Cells(existingRow, acRelName).Value & " / " & _
+                                 wsDest.Cells(existingRow, acMasterName).Value & " / " & _
+                                 wsDest.Cells(existingRow, acAcctName).Value
+                        
+                        wsDest.Cells(existingRow, acRelName).Value = relName
+                        wsDest.Cells(existingRow, acMasterID).Value = masterID
+                        wsDest.Cells(existingRow, acMasterName).Value = masterName
+                        wsDest.Cells(existingRow, acAcctName).Value = acctName
+                        
+                        newVal = relName & " / " & masterName & " / " & acctName
+                        
+                        ' Highlight in yellow
+                        wsDest.Range(wsDest.Cells(existingRow, acRelName), _
+                                     wsDest.Cells(existingRow, acAcctName)).Interior.Color = RGB(255, 255, 153)
+                        
+                        LogChange "Overwrite Account", "Key=" & key, oldVal, newVal
+                    End If
+                Else
+                    ' If user isn't overwriting or no entry in overwrites, skip
+                End If
+            End If
+        End If
+    Next i
+    
+    wbSource.Close False
+    
+Cleanup:
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.Calculation = xlCalculationAutomatic
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error in ProcessUpload: " & Err.Description, vbCritical
+    Resume Cleanup
+End Sub
