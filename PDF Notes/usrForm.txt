@@ -1,0 +1,87 @@
+Option Explicit
+
+Private selectedFilePath As String
+
+' When the form initializes, clear the file path and TreeView.
+Private Sub UserForm_Initialize()
+    selectedFilePath = ""
+    lblStatus.Caption = ""
+    tvwPreview.Nodes.Clear
+    chkAllowDuplicates.Value = False
+End Sub
+
+' Browse button: open a file dialog to select an external file.
+Private Sub cmdBrowse_Click()
+    Dim fd As FileDialog
+    On Error GoTo ErrHandler
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    With fd
+        .Title = "Select Accounts File"
+        .Filters.Clear
+        .Filters.Add "Excel Files", "*.xlsx;*.xlsm;*.xls;*.csv", 1
+        .AllowMultiSelect = False
+        If .Show = -1 Then
+            selectedFilePath = .SelectedItems(1)
+            lblStatus.Caption = "File selected: " & selectedFilePath
+            ' Load preview from the selected file.
+            LoadPreview
+        End If
+    End With
+CleanExit:
+    Exit Sub
+ErrHandler:
+    MsgBox "Error in Browse: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+' LoadPreview: loads existing data, builds the upload structure, and populates the TreeView.
+Private Sub LoadPreview()
+    On Error GoTo ErrHandler
+    Dim dictRel As Object, dictMaster As Object, dictAcct As Object
+    ' Load existing accounts from "Account Data"
+    Call modPreviewUpload.LoadExistingStructure(dictRel, dictMaster, dictAcct)
+    
+    ' Build the hierarchical structure from the upload file.
+    Dim uploadStruct As Object
+    Set uploadStruct = modPreviewUpload.BuildUploadStructure(selectedFilePath, dictRel, dictMaster, dictAcct)
+    
+    ' Populate the TreeView control with the upload structure.
+    modPreviewUpload.PopulateTreeView tvwPreview, uploadStruct, dictRel, dictMaster
+    
+    lblStatus.Caption = "Preview loaded."
+CleanExit:
+    Exit Sub
+ErrHandler:
+    MsgBox "Error in LoadPreview: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+' Import button: if the user is satisfied with the preview, import the new accounts.
+Private Sub cmdImport_Click()
+    On Error GoTo ErrHandler
+    If selectedFilePath = "" Then
+        MsgBox "Please select a file first.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' (For this implementation, we assume that only new accounts shown in the preview are imported.)
+    ' Call the import routine from modUpload.
+    ' This routine re-opens the file and writes new accounts into "Account Data" (highlighted in green)
+    ' or overwrites duplicates if chkAllowDuplicates is True (highlighted in yellow).
+    Dim allowDup As Boolean
+    allowDup = chkAllowDuplicates.Value
+    modUpload.ProcessUpload selectedFilePath, allowDup
+    
+    MsgBox "Accounts imported successfully.", vbInformation
+    Unload Me
+CleanExit:
+    Exit Sub
+ErrHandler:
+    MsgBox "Error in Import: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+' Cancel button: close the userform without importing.
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
