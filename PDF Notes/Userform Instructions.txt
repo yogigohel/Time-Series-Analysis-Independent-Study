@@ -1,0 +1,330 @@
+Option Explicit
+
+Private selectedFilePath As String
+
+' Dictionary Key: "relNum|masterID|acctNum"
+' Dictionary Value: Variant array of [Relationship#, Relationship Name, Master ID, Master Name, Acct#, Acct Name]
+Private dictWorkbook As Object  ' from existing "Account Data"
+Private dictUpload   As Object  ' from the new file
+
+'---------------------------------------------------------------------------------
+' USERFORM: Only 2 public controls needed for logic: "Browse" & "Import".
+' The rest is internal (ListBox "lstPreview," etc.).
+'---------------------------------------------------------------------------------
+
+Private Sub UserForm_Initialize()
+    Me.lblFilePath.Caption = ""
+    Me.lstPreview.Clear
+    
+    ' 7 columns: 6 data + 1 status
+    Me.lstPreview.ColumnCount = 7
+    Me.lstPreview.ColumnWidths = "70;120;70;120;70;120;70"  ' adjust as needed
+    
+    ' Default: no duplicates overwrites
+    Me.chkAllowDuplicates.Value = False
+End Sub
+
+'---------------------------------------------------------------------------------
+' BROWSE BUTTON
+' Lets the user pick an external workbook. We then load a "preview" showing
+' which accounts are NEW, CHANGED, REMOVED, or UNCHANGED.
+'---------------------------------------------------------------------------------
+Private Sub cmdBrowseFile_Click()
+    Dim fd As FileDialog
+    On Error GoTo ErrHandler
+    
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    With fd
+        .Title = "Select the Accounts File"
+        .Filters.Clear
+        .Filters.Add "Excel Files", "*.xlsx; *.xlsm; *.xls; *.csv", 1
+        .AllowMultiSelect = False
+        
+        If .Show = -1 Then
+            selectedFilePath = .SelectedItems(1)
+            Me.lblFilePath.Caption = selectedFilePath
+            ' Load preview
+            PreviewData selectedFilePath
+        End If
+    End With
+CleanExit:
+    Exit Sub
+ErrHandler:
+    MsgBox "Error in cmdBrowseFile_Click: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+'---------------------------------------------------------------------------------
+' PREVIEWDATA
+' 1) Builds a dictionary (dictUpload) of the new file’s accounts, regardless of column order.
+' 2) Builds a dictionary (dictWorkbook) from existing "Account Data."
+' 3) Compares both to classify each account as NEW, CHANGED, REMOVED, or UNCHANGED.
+' 4) Fills lstPreview with the combined list.
+'---------------------------------------------------------------------------------
+Private Sub PreviewData(ByVal filePath As String)
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    
+    ' 1) Build dictUpload from the external file
+    Set dictUpload = CreateObject("Scripting.Dictionary")
+    ParseExternalFile filePath, dictUpload
+    
+    ' 2) Build dictWorkbook from "Account Data"
+    Set dictWorkbook = CreateObject("Scripting.Dictionary")
+    ParseWorkbook dictWorkbook
+    
+    ' 3) Clear existing items in the ListBox
+    Me.lstPreview.Clear
+    
+    ' Optionally add a header row
+    Dim hdrIndex As Long
+    hdrIndex = Me.lstPreview.ListCount
+    Me.lstPreview.AddItem
+    Me.lstPreview.List(hdrIndex, 0) = "Rel#"
+    Me.lstPreview.List(hdrIndex, 1) = "Rel Name"
+    Me.lstPreview.List(hdrIndex, 2) = "Master ID"
+    Me.lstPreview.List(hdrIndex, 3) = "Master Name"
+    Me.lstPreview.List(hdrIndex, 4) = "Acct#"
+    Me.lstPreview.List(hdrIndex, 5) = "Acct Name"
+    Me.lstPreview.List(hdrIndex, 6) = "Status"
+    
+    ' 4) Compare both dictionaries
+    Dim key As Variant
+    
+    ' (a) Check every key in the new upload
+    For Each key In dictUpload.Keys
+        Dim arrNew As Variant, arrOld As Variant
+        arrNew = dictUpload(key) ' [Rel#,RelName,MasterID,MasterName,Acct#,AcctName]
+        
+        If Not dictWorkbook.Exists(key) Then
+            ' This is NEW (in upload, not in workbook)
+            AddToList arrNew, "NEW"
+        Else
+            ' Compare the 6 fields for changes
+            arrOld = dictWorkbook(key)
+            If IsDifferent(arrOld, arrNew) Then
+                AddToList arrNew, "CHANGED"
+            Else
+                AddToList arrNew, "UNCHANGED"
+            End If
+        End If
+    Next key
+    
+    ' (b) Check if anything is in the workbook but NOT in the upload => REMOVED
+    For Each key In dictWorkbook.Keys
+        If Not dictUpload.Exists(key) Then
+            ' An account is missing in the new file => REMOVED
+            Dim arrRem As Variant
+            arrRem = dictWorkbook(key)
+            AddToList arrRem, "REMOVED"
+        End If
+    Next key
+    
+CleanExit:
+    Application.ScreenUpdating = True
+    Exit Sub
+ErrHandler:
+    MsgBox "Error in PreviewData: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+'---------------------------------------------------------------------------------
+' ADDTOLIST
+' Helper to add one row to the ListBox with the appropriate "Status."
+'---------------------------------------------------------------------------------
+Private Sub AddToList(ByVal arrData As Variant, ByVal statusText As String)
+    Dim newIndex As Long
+    newIndex = Me.lstPreview.ListCount
+    Me.lstPreview.AddItem
+    
+    ' arrData = [Rel#, RelName, MasterID, MasterName, Acct#, AcctName]
+    Me.lstPreview.List(newIndex, 0) = arrData(0)
+    Me.lstPreview.List(newIndex, 1) = arrData(1)
+    Me.lstPreview.List(newIndex, 2) = arrData(2)
+    Me.lstPreview.List(newIndex, 3) = arrData(3)
+    Me.lstPreview.List(newIndex, 4) = arrData(4)
+    Me.lstPreview.List(newIndex, 5) = arrData(5)
+    
+    Me.lstPreview.List(newIndex, 6) = statusText  ' e.g. "NEW", "CHANGED", etc.
+End Sub
+
+'---------------------------------------------------------------------------------
+' ISDIFFERENT
+' Checks if any of the 6 fields differ (except the key fields).
+'---------------------------------------------------------------------------------
+Private Function IsDifferent(arrOld As Variant, arrNew As Variant) As Boolean
+    Dim i As Long
+    ' Compare each corresponding index
+    For i = LBound(arrOld) To UBound(arrOld)
+        If arrOld(i) <> arrNew(i) Then
+            IsDifferent = True
+            Exit Function
+        End If
+    Next i
+    IsDifferent = False
+End Function
+
+'---------------------------------------------------------------------------------
+' PARSEEXTERNALFILE
+' Reads the external file's first worksheet, identifies columns by header name,
+' and populates dict with key="Rel#|MasterID|AcctNum" -> array(6 fields).
+'---------------------------------------------------------------------------------
+Private Sub ParseExternalFile(ByVal filePath As String, ByRef dict As Object)
+    Dim wbTemp As Workbook, wsTemp As Worksheet
+    Dim lastRow As Long, lastCol As Long
+    Dim i As Long
+    Dim colMap As Collection ' to store column indices for required headers
+    
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    
+    Set wbTemp = Workbooks.Open(filePath, ReadOnly:=True)
+    Set wsTemp = wbTemp.Sheets(1) ' assume data is on the first sheet
+    
+    lastRow = wsTemp.Cells(wsTemp.Rows.Count, 1).End(xlUp).Row
+    lastCol = wsTemp.Cells(1, wsTemp.Columns.Count).End(xlToLeft).Column
+    
+    ' 1) Identify columns from the header row
+    Set colMap = MapColumns(wsTemp, lastCol)
+    
+    ' 2) Read each data row -> dictionary
+    For i = 2 To lastRow
+        Dim relNum As String, relName As String
+        Dim masterID As String, masterName As String
+        Dim acctNum As String, acctName As String
+        
+        relNum = CStr(wsTemp.Cells(i, colMap("Relationship#")).Value)
+        relName = CStr(wsTemp.Cells(i, colMap("Relationship Name")).Value)
+        masterID = CStr(wsTemp.Cells(i, colMap("Master Account ID")).Value)
+        masterName = CStr(wsTemp.Cells(i, colMap("Master Account Name")).Value)
+        acctNum = CStr(wsTemp.Cells(i, colMap("Account#")).Value)
+        acctName = CStr(wsTemp.Cells(i, colMap("Acct Name")).Value)
+        
+        Dim key As String
+        key = relNum & "|" & masterID & "|" & acctNum
+        
+        ' Store all 6 fields in an array
+        Dim arrFields(0 To 5) As Variant
+        arrFields(0) = relNum
+        arrFields(1) = relName
+        arrFields(2) = masterID
+        arrFields(3) = masterName
+        arrFields(4) = acctNum
+        arrFields(5) = acctName
+        
+        dict(key) = arrFields
+    Next i
+    
+    wbTemp.Close False
+CleanExit:
+    Application.ScreenUpdating = True
+    Exit Sub
+ErrHandler:
+    MsgBox "Error in ParseExternalFile: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+'---------------------------------------------------------------------------------
+' PARSEWORKBOOK
+' Reads the "Account Data" sheet in this workbook and populates dict in the same format.
+'---------------------------------------------------------------------------------
+Private Sub ParseWorkbook(ByRef dict As Object)
+    Dim ws As Worksheet
+    Dim lastRow As Long, i As Long
+    
+    Set ws = ThisWorkbook.Sheets("Account Data")
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    For i = 2 To lastRow
+        Dim relNum As String, relName As String
+        Dim masterID As String, masterName As String
+        Dim acctNum As String, acctName As String
+        
+        relNum = CStr(ws.Cells(i, 1).Value)
+        relName = CStr(ws.Cells(i, 2).Value)
+        masterID = CStr(ws.Cells(i, 3).Value)
+        masterName = CStr(ws.Cells(i, 4).Value)
+        acctNum = CStr(ws.Cells(i, 5).Value)
+        acctName = CStr(ws.Cells(i, 6).Value)
+        
+        Dim key As String
+        key = relNum & "|" & masterID & "|" & acctNum
+        
+        Dim arrFields(0 To 5) As Variant
+        arrFields(0) = relNum
+        arrFields(1) = relName
+        arrFields(2) = masterID
+        arrFields(3) = masterName
+        arrFields(4) = acctNum
+        arrFields(5) = acctName
+        
+        dict(key) = arrFields
+    Next i
+End Sub
+
+'---------------------------------------------------------------------------------
+' MAPCOLUMNS
+' Utility that returns a Collection mapping the required header name -> column number.
+' Throws an error if a required column is missing.
+'---------------------------------------------------------------------------------
+Private Function MapColumns(ByVal ws As Worksheet, ByVal lastCol As Long) As Collection
+    Dim colHeaders As New Collection
+    colHeaders.Add "Relationship#", "Relationship#"
+    colHeaders.Add "Relationship Name", "Relationship Name"
+    colHeaders.Add "Master Account ID", "Master Account ID"
+    colHeaders.Add "Master Account Name", "Master Account Name"
+    colHeaders.Add "Account#", "Account#"
+    colHeaders.Add "Acct Name", "Acct Name"
+    
+    Dim result As New Collection
+    Dim foundCount As Long
+    foundCount = 0
+    
+    Dim c As Long
+    For c = 1 To lastCol
+        Dim hdrVal As String
+        hdrVal = Trim(CStr(ws.Cells(1, c).Value))
+        
+        ' If this header is one of our needed columns, store the index
+        If colHeaders.Contains(hdrVal) Then
+            result.Add c, hdrVal
+            foundCount = foundCount + 1
+        End If
+    Next c
+    
+    ' Ensure all 6 columns were found
+    If foundCount < 6 Then
+        Err.Raise vbObjectError + 100, , "Missing one or more required column headers in row 1."
+    End If
+    
+    Set MapColumns = result
+End Function
+
+'---------------------------------------------------------------------------------
+' IMPORT BUTTON
+' Calls the final import function to handle writes/overwrites in "Account Data."
+'---------------------------------------------------------------------------------
+Private Sub cmdImport_Click()
+    On Error GoTo ErrHandler
+    
+    If selectedFilePath = "" Then
+        MsgBox "No file selected. Please browse for a file first.", vbExclamation
+        Exit Sub
+    End If
+    
+    Dim allowDup As Boolean
+    allowDup = Me.chkAllowDuplicates.Value
+    
+    ' We'll pass a blank overwrites Collection for now, or you can fill it from the preview
+    Dim collOverwrites As New Collection
+    
+    ProcessUpload selectedFilePath, allowDup, collOverwrites
+    
+    MsgBox "Data import complete.", vbInformation
+    Unload Me
+CleanExit:
+    Exit Sub
+ErrHandler:
+    MsgBox "Error in cmdImport_Click: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
