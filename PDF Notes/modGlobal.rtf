@@ -1,0 +1,38 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2821
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 Option Explicit\
+\
+'---------------------------------------------------------------------------------\
+' modGlobal: Stores global constants and enumerations for column references.\
+'---------------------------------------------------------------------------------\
+\
+Public Const SH_DASHBOARD    As String = "Dashboard"\
+Public Const SH_ACCOUNT_DATA As String = "Account Data"\
+Public Const SH_CALL_LOGS    As String = "Call Logs"\
+Public Const SH_REMINDERS    As String = "Reminders"\
+Public Const SH_CHANGE_LOG   As String = "Change Log"\
+\
+' Columns in "Account Data"\
+Public Enum AccountDataCols\
+    acRelNum = 1            ' A -> Relationship#\
+    acRelName               ' B -> Relationship Name\
+    acMasterID              ' C -> Master Account ID\
+    acMasterName            ' D -> Master Account Name\
+    acAcctNum               ' E -> Account#\
+    acAcctName              ' F -> Acct Name\
+End Enum\
+\
+' Columns in "Change Log"\
+Public Enum ChangeLogCols\
+    chgTimestamp = 1        ' A\
+    chgUser                 ' B\
+    chgAction               ' C\
+    chgAffectedData         ' D\
+    chgOldValue             ' E\
+    chgNewValue             ' F\
+End Enum}
