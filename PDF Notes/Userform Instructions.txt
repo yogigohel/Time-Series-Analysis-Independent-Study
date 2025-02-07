@@ -263,38 +263,53 @@ Private Sub ParseWorkbook(ByRef dict As Object)
 End Sub
 
 '---------------------------------------------------------------------------------
-' MAPCOLUMNS
-' Utility that returns a Collection mapping the required header name -> column number.
-' Throws an error if a required column is missing.
+' MAPCOLUMNS (UPDATED):
+' Uses two dictionaries:
+'   1) requiredHeaders (which columns we want, by name)
+'   2) result         (maps "Relationship#" => columnNumber)
 '---------------------------------------------------------------------------------
-Private Function MapColumns(ByVal ws As Worksheet, ByVal lastCol As Long) As Collection
-    Dim colHeaders As New Collection
-    colHeaders.Add "Relationship#", "Relationship#"
-    colHeaders.Add "Relationship Name", "Relationship Name"
-    colHeaders.Add "Master Account ID", "Master Account ID"
-    colHeaders.Add "Master Account Name", "Master Account Name"
-    colHeaders.Add "Account#", "Account#"
-    colHeaders.Add "Acct Name", "Acct Name"
-    
-    Dim result As New Collection
+Private Function MapColumns(ByVal ws As Worksheet, ByVal lastCol As Long) As Object
+    ' We'll return a Scripting.Dictionary: Key = header name, Value = column number
+    Dim requiredHeaders As Object
+    Dim result As Object
     Dim foundCount As Long
+    Dim c As Long
+    
+    ' Create dictionaries
+    Set requiredHeaders = CreateObject("Scripting.Dictionary")
+    requiredHeaders.CompareMode = vbTextCompare ' case-insensitive matching
+
+    ' Add the required columns
+    requiredHeaders("Relationship#") = True
+    requiredHeaders("Relationship Name") = True
+    requiredHeaders("Master Account ID") = True
+    requiredHeaders("Master Account Name") = True
+    requiredHeaders("Account#") = True
+    requiredHeaders("Acct Name") = True
+
+    ' This will hold the final column mapping: e.g. result("Relationship#") = 3
+    Set result = CreateObject("Scripting.Dictionary")
+    result.CompareMode = vbTextCompare
+    
     foundCount = 0
     
-    Dim c As Long
+    ' Loop through row 1 up to lastCol
     For c = 1 To lastCol
         Dim hdrVal As String
-        hdrVal = Trim(CStr(ws.Cells(1, c).Value))
+        hdrVal = Trim(CStr(ws.Cells(1, c).Value)) ' read the header cell
         
-        ' If this header is one of our needed columns, store the index
-        If colHeaders.Contains(hdrVal) Then
-            result.Add c, hdrVal
+        If requiredHeaders.Exists(hdrVal) Then
+            ' We found a recognized column
+            result(hdrVal) = c
             foundCount = foundCount + 1
         End If
     Next c
     
     ' Ensure all 6 columns were found
     If foundCount < 6 Then
-        Err.Raise vbObjectError + 100, , "Missing one or more required column headers in row 1."
+        Err.Raise vbObjectError + 100, , _
+            "Missing one or more required column headers in row 1." & vbCrLf & _
+            "Required: Relationship#, Relationship Name, Master Account ID, Master Account Name, Account#, Acct Name"
     End If
     
     Set MapColumns = result
