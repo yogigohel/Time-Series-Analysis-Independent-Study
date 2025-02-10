@@ -6,3 +6,36 @@
 )
 
 =COUNTIFS(tblMeetings[Next Review Date], A1)>0
+
+Public Sub OpenRelationshipForm()
+    frmRelationship.Show
+End Sub
+
+
+Private Sub Worksheet_FollowHyperlink(ByVal Target As Hyperlink)
+    Dim parts() As String, entityID As String, entityType As String
+    parts = Split(Target.TextToDisplay, " - ")
+    If UBound(parts) >= 1 Then
+        entityID = parts(0)
+        entityType = parts(1)
+        Select Case LCase(entityType)
+            Case "account": ShowAccountDetails entityID
+            Case "master account": ShowMasterDetails entityID
+            Case "relationship": ShowRelationshipDetails entityID
+            Case Else: MsgBox "Unknown entity type."
+        End Select
+    End If
+End Sub
+
+Public Sub ShowAccountDetails(acctID As String)
+    MsgBox "Showing details for Account#: " & acctID
+    ' Code to navigate to the Accounts sheet and highlight the row.
+End Sub
+
+Public Sub ShowMasterDetails(masterID As String)
+    MsgBox "Showing details for Master Account: " & masterID
+End Sub
+
+Public Sub ShowRelationshipDetails(relID As String)
+    MsgBox "Showing details for Relationship: " & relID
+End Sub
