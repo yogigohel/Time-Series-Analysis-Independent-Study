@@ -1,0 +1,106 @@
+'==============================
+' Module: modImportAccounts
+'==============================
+Public Sub ImportAccounts()
+    Dim filePath As Variant
+    Dim importWb As Workbook
+    Dim importWs As Worksheet
+    Dim accountsWs As Worksheet
+    Dim accountsTbl As ListObject
+    Dim lastRow As Long
+    Dim headerRow As Range
+    Dim headerDict As Object
+    Dim cell As Range
+    Dim requiredHeaders As Variant
+    Dim header As Variant
+    Dim importData As Variant
+    Dim i As Long, newRowIndex As Long
+    Dim newAcctID As Variant
+    Dim foundCell As Range
+    Dim rowToInsert As ListRow
+    
+    On Error GoTo ErrorHandler
+    Application.ScreenUpdating = False
+    
+    ' Prompt user to select the import file
+    filePath = Application.GetOpenFilename("Excel Files (*.xls;*.xlsx), *.xls;*.xlsx", , "Select the Account Import File")
+    If filePath = False Then
+        MsgBox "Import cancelled.", vbInformation
+        GoTo ExitProcedure
+    End If
+    
+    ' Open the selected workbook (read-only)
+    Set importWb = Workbooks.Open(filePath, ReadOnly:=True)
+    ' Assume data is in the first worksheet
+    Set importWs = importWb.Worksheets(1)
+    
+    ' Assume headers are in the first row; build a dictionary mapping header names to column numbers.
+    Set headerRow = importWs.Range("1:1")
+    Set headerDict = CreateObject("Scripting.Dictionary")
+    For Each cell In headerRow.Cells
+        If Not IsEmpty(cell) Then
+            headerDict(Trim(cell.Value)) = cell.Column
+        End If
+    Next cell
+    
+    ' Check that all required headers exist
+    requiredHeaders = Array("Master Account ID", "Master Account Name", "Account#", "Acct Name", "Investable Cash", "Cash %", "Equity %", "Fixed Income %")
+    For Each header In requiredHeaders
+        If Not headerDict.Exists(header) Then
+            MsgBox "The header '" & header & "' was not found in the import file.", vbCritical
+            GoTo Cleanup
+        End If
+    Next header
+    
+    ' Determine the last row in the import sheet based on the "Account#" column
+    lastRow = importWs.Cells(importWs.Rows.Count, headerDict("Account#")).End(xlUp).Row
+    If lastRow < 2 Then
+        MsgBox "No data found in the import file.", vbExclamation
+        GoTo Cleanup
+    End If
+    
+    ' Read the data (from row 2 to lastRow) into an array for fast processing.
+    importData = importWs.Range(importWs.Cells(2, 1), importWs.Cells(lastRow, importWs.UsedRange.Columns.Count)).Value
+    
+    ' Reference the Accounts table in THIS workbook.
+    Set accountsWs = ThisWorkbook.Sheets("Accounts")
+    Set accountsTbl = accountsWs.ListObjects("tblAccounts")
+    
+    ' Loop through each row of imported data
+    For i = 1 To UBound(importData, 1)
+        newAcctID = importData(i, headerDict("Account#"))
+        ' Check if Account# already exists in tblAccounts (assume tblAccounts column 3 is Account#)
+        Set foundCell = accountsTbl.DataBodyRange.Columns(3).Find(What:=newAcctID, LookIn:=xlValues, LookAt:=xlWhole)
+        If foundCell Is Nothing Then
+            ' Add a new row and populate columns
+            Set rowToInsert = accountsTbl.ListRows.Add
+            With rowToInsert.Range
+                .Cells(1, 1).Value = importData(i, headerDict("Master Account ID"))
+                .Cells(1, 2).Value = importData(i, headerDict("Master Account Name"))
+                .Cells(1, 3).Value = newAcctID
+                .Cells(1, 4).Value = importData(i, headerDict("Acct Name"))
+                .Cells(1, 5).Value = importData(i, headerDict("Investable Cash"))
+                .Cells(1, 6).Value = importData(i, headerDict("Cash %"))
+                .Cells(1, 7).Value = importData(i, headerDict("Equity %"))
+                .Cells(1, 8).Value = importData(i, headerDict("Fixed Income %"))
+                ' Columns 9 ("Relationship"), 10 ("Tradeable?"), 11 ("Target Review Days") and 12 ("Last Review Date")
+                ' are left blank (or user–editable) by default.
+            End With
+        End If
+    Next i
+    
+    MsgBox "Accounts updated successfully!", vbInformation
+    
+Cleanup:
+    ' Close the imported workbook without saving
+    If Not importWb Is Nothing Then
+        importWb.Close SaveChanges:=False
+    End If
+ExitProcedure:
+    Application.ScreenUpdating = True
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbCritical
+    Resume Cleanup
+End Sub
