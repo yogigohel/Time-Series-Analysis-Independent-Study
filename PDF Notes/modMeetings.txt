@@ -1,0 +1,62 @@
+'==============================
+' Module: modMeetings
+'==============================
+Public Sub LogMeeting()
+    On Error GoTo ErrorHandler
+    
+    Dim wsMeet As Worksheet: Set wsMeet = ThisWorkbook.Sheets("Meetings")
+    Dim lo As ListObject: Set lo = wsMeet.ListObjects("tblMeetings")
+    Dim newRow As ListRow
+    Dim meetingDate As Date, entityType As String, entityID As String, notes As String
+    
+    meetingDate = CDate(InputBox("Enter the meeting date (mm/dd/yyyy):", "Meeting Date"))
+    entityType = InputBox("Enter the entity type (Account, Master Account, or Relationship):", "Entity Type")
+    entityID = InputBox("Enter the entity ID (Account#, etc.):", "Entity ID")
+    notes = InputBox("Enter meeting notes:", "Meeting Notes")
+    
+    Set newRow = lo.ListRows.Add
+    With newRow.Range
+        .Cells(1, 1).Value = meetingDate
+        .Cells(1, 2).Value = entityType
+        .Cells(1, 3).Value = entityID
+        .Cells(1, 4).Value = GetEntityName(entityType, entityID)
+        .Cells(1, 5).Value = notes
+        .Cells(1, 6).Value = meetingDate + GetReviewDays(entityType, entityID)
+    End With
+    
+    MsgBox "Meeting logged successfully!", vbInformation
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbCritical
+End Sub
+
+Public Function GetEntityName(entityType As String, entityID As String) As String
+    On Error Resume Next
+    Select Case LCase(entityType)
+        Case "account"
+            GetEntityName = Application.VLookup(entityID, _
+                ThisWorkbook.Sheets("Accounts").ListObjects("tblAccounts").Range, 4, False)
+        Case "master account"
+            GetEntityName = Application.VLookup(entityID, _
+                ThisWorkbook.Sheets("Accounts").ListObjects("tblAccounts").Range, 2, False)
+        Case "relationship"
+            GetEntityName = Application.VLookup(entityID, _
+                ThisWorkbook.Sheets("Relationships").ListObjects("tblRelationships").Range, 2, False)
+        Case Else
+            GetEntityName = "Unknown"
+    End Select
+End Function
+
+Public Function GetReviewDays(entityType As String, entityID As String) As Long
+    Select Case LCase(entityType)
+        Case "account"
+            GetReviewDays = 30   ' Or look up a value from tblAccounts (column 11)
+        Case "master account"
+            GetReviewDays = 60
+        Case "relationship"
+            GetReviewDays = 90
+        Case Else
+            GetReviewDays = 30
+    End Select
+End Function
