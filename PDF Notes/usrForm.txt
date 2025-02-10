@@ -1,87 +1,101 @@
+'==============================
+' Code for frmRelationship
+'==============================
 Option Explicit
 
-Private selectedFilePath As String
-
-' When the form initializes, clear the file path and TreeView.
 Private Sub UserForm_Initialize()
-    selectedFilePath = ""
-    lblStatus.Caption = ""
-    tvwPreview.Nodes.Clear
-    chkAllowDuplicates.Value = False
+    LoadAccountList
 End Sub
 
-' Browse button: open a file dialog to select an external file.
-Private Sub cmdBrowse_Click()
-    Dim fd As FileDialog
-    On Error GoTo ErrHandler
-    Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    With fd
-        .Title = "Select Accounts File"
-        .Filters.Clear
-        .Filters.Add "Excel Files", "*.xlsx;*.xlsm;*.xls;*.csv", 1
-        .AllowMultiSelect = False
-        If .Show = -1 Then
-            selectedFilePath = .SelectedItems(1)
-            lblStatus.Caption = "File selected: " & selectedFilePath
-            ' Load preview from the selected file.
-            LoadPreview
-        End If
-    End With
-CleanExit:
-    Exit Sub
-ErrHandler:
-    MsgBox "Error in Browse: " & Err.Description, vbCritical
-    Resume CleanExit
+Private Sub LoadAccountList()
+    Dim ws As Worksheet, lo As ListObject, lr As ListRow
+    Set ws = ThisWorkbook.Sheets("Accounts")
+    Set lo = ws.ListObjects("tblAccounts")
+    lstAvailableAccounts.Clear
+    For Each lr In lo.ListRows
+        lstAvailableAccounts.AddItem lr.Range.Cells(1, 3).Value  ' Assumes Account# is column 3
+    Next lr
 End Sub
 
-' LoadPreview: loads existing data, builds the upload structure, and populates the TreeView.
-Private Sub LoadPreview()
-    On Error GoTo ErrHandler
-    Dim dictRel As Object, dictMaster As Object, dictAcct As Object
-    ' Load existing accounts from "Account Data"
-    Call modPreviewUpload.LoadExistingStructure(dictRel, dictMaster, dictAcct)
-    
-    ' Build the hierarchical structure from the upload file.
-    Dim uploadStruct As Object
-    Set uploadStruct = modPreviewUpload.BuildUploadStructure(selectedFilePath, dictRel, dictMaster, dictAcct)
-    
-    ' Populate the TreeView control with the upload structure.
-    modPreviewUpload.PopulateTreeView tvwPreview, uploadStruct, dictRel, dictMaster
-    
-    lblStatus.Caption = "Preview loaded."
-CleanExit:
-    Exit Sub
-ErrHandler:
-    MsgBox "Error in LoadPreview: " & Err.Description, vbCritical
-    Resume CleanExit
+Private Sub cmdAdd_Click()
+    Dim selIndex As Long
+    selIndex = lstAvailableAccounts.ListIndex
+    If selIndex <> -1 Then
+        lstSelectedAccounts.AddItem lstAvailableAccounts.List(selIndex)
+        lstAvailableAccounts.RemoveItem selIndex
+    Else
+        MsgBox "Please select an account to add.", vbExclamation
+    End If
 End Sub
 
-' Import button: if the user is satisfied with the preview, import the new accounts.
-Private Sub cmdImport_Click()
-    On Error GoTo ErrHandler
-    If selectedFilePath = "" Then
-        MsgBox "Please select a file first.", vbExclamation
+Private Sub cmdRemove_Click()
+    Dim selIndex As Long
+    selIndex = lstSelectedAccounts.ListIndex
+    If selIndex <> -1 Then
+        lstAvailableAccounts.AddItem lstSelectedAccounts.List(selIndex)
+        lstSelectedAccounts.RemoveItem selIndex
+    Else
+        MsgBox "Please select an account to remove.", vbExclamation
+    End If
+End Sub
+
+Private Sub cmdSave_Click()
+    Dim wsRel As Worksheet: Set wsRel = ThisWorkbook.Sheets("Relationships")
+    Dim nextRow As Long, i As Long
+    
+    If Trim(txtRelationshipName.Value) = "" Then
+        MsgBox "Please enter a Relationship name.", vbExclamation
         Exit Sub
     End If
     
-    ' (For this implementation, we assume that only new accounts shown in the preview are imported.)
-    ' Call the import routine from modUpload.
-    ' This routine re-opens the file and writes new accounts into "Account Data" (highlighted in green)
-    ' or overwrites duplicates if chkAllowDuplicates is True (highlighted in yellow).
-    Dim allowDup As Boolean
-    allowDup = chkAllowDuplicates.Value
-    modUpload.ProcessUpload selectedFilePath, allowDup
+    If lstSelectedAccounts.ListCount = 0 Then
+        MsgBox "Please add at least one account to the relationship.", vbExclamation
+        Exit Sub
+    End If
     
-    MsgBox "Accounts imported successfully.", vbInformation
+    nextRow = wsRel.Cells(wsRel.Rows.Count, 1).End(xlUp).Row + 1
+    For i = 0 To lstSelectedAccounts.ListCount - 1
+        With wsRel
+            .Cells(nextRow, 1).Value = nextRow - 1  ' Simple incremental ID
+            .Cells(nextRow, 2).Value = txtRelationshipName.Value
+            .Cells(nextRow, 3).Value = ""           ' Parent ID (if needed)
+            .Cells(nextRow, 4).Value = lstSelectedAccounts.List(i)
+            .Cells(nextRow, 5).Value = GetMasterID(lstSelectedAccounts.List(i))
+        End With
+        nextRow = nextRow + 1
+    Next i
+    
+    UpdateAccountRelationships txtRelationshipName.Value, lstSelectedAccounts
+    
+    MsgBox "Relationship saved successfully.", vbInformation
     Unload Me
-CleanExit:
-    Exit Sub
-ErrHandler:
-    MsgBox "Error in Import: " & Err.Description, vbCritical
-    Resume CleanExit
 End Sub
 
-' Cancel button: close the userform without importing.
-Private Sub cmdCancel_Click()
-    Unload Me
+' Helper: Look up Master Account ID for a given Account#
+Private Function GetMasterID(acctID As Variant) As Variant
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets("Accounts")
+    Dim lo As ListObject: Set lo = ws.ListObjects("tblAccounts")
+    Dim rngFound As Range
+    Set rngFound = lo.DataBodyRange.Columns(3).Find(What:=acctID, LookIn:=xlValues, LookAt:=xlWhole)
+    If Not rngFound Is Nothing Then
+        GetMasterID = rngFound.Offset(0, -2).Value  ' Assumes column 1 is Master Account ID
+    Else
+        GetMasterID = ""
+    End If
+End Function
+
+' Update the Accounts table with the new Relationship name.
+Private Sub UpdateAccountRelationships(relName As String, selList As MSForms.ListBox)
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets("Accounts")
+    Dim lo As ListObject: Set lo = ws.ListObjects("tblAccounts")
+    Dim i As Long, acctID As Variant, lr As ListRow
+    For i = 0 To selList.ListCount - 1
+        acctID = selList.List(i)
+        For Each lr In lo.ListRows
+            If lr.Range.Cells(1, 3).Value = acctID Then
+                lr.Range.Cells(1, 9).Value = relName  ' Column 9 is "Relationship"
+                Exit For
+            End If
+        Next lr
+    Next i
 End Sub
