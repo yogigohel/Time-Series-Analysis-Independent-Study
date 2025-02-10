@@ -1,0 +1,8 @@
+=LET(
+    todayDate, TODAY(),
+    startDate, EOMONTH(todayDate, -1) + 1,
+    totalDays, DAY(EOMONTH(todayDate, 0)),
+    SEQUENCE(totalDays, 1, startDate)
+)
+
+=COUNTIFS(tblMeetings[Next Review Date], A1)>0
