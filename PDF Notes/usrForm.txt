@@ -2,12 +2,12 @@ Option Explicit
 
 '--- Initialization ---
 Private Sub UserForm_Initialize()
-    Call PopulateRelationships
-    Call LoadAvailableAccounts
+    PopulateRelationships
+    LoadAvailableAccounts
 End Sub
 
+' Populate the combo box with a manually built list.
 Private Sub PopulateRelationships()
-    ' Populate cboRelationships with "New Relationship" plus existing (unique) relationship names.
     Dim wsRel As Worksheet, loRel As ListObject, r As ListRow
     Dim dict As Object, relName As String
     Set dict = CreateObject("Scripting.Dictionary")
@@ -33,15 +33,16 @@ End Sub
 Private Sub cboRelationships_Change()
     If cboRelationships.Value <> "New Relationship" Then
         txtRelationshipName.Value = cboRelationships.Value
-        Call LoadSelectedAccounts(cboRelationships.Value)
-        Call LoadAvailableAccounts(cboRelationships.Value)
+        LoadSelectedAccounts cboRelationships.Value
+        LoadAvailableAccounts cboRelationships.Value
     Else
         txtRelationshipName.Value = ""
         lstSelectedAccounts.Clear
-        Call LoadAvailableAccounts
+        LoadAvailableAccounts
     End If
 End Sub
 
+' Load accounts already assigned to the given relationship.
 Private Sub LoadSelectedAccounts(ByVal relName As String)
     Dim wsRel As Worksheet, loRel As ListObject, r As ListRow
     lstSelectedAccounts.Clear
@@ -57,8 +58,8 @@ Private Sub LoadSelectedAccounts(ByVal relName As String)
     Next r
 End Sub
 
+' Load accounts not yet assigned a relationship.
 Private Sub LoadAvailableAccounts(Optional ByVal currentRel As String = "")
-    ' Load accounts that are not yet assigned a relationship.
     Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
     lstAvailableAccounts.Clear
     Set wsAcc = ThisWorkbook.Sheets("Accounts")
@@ -68,12 +69,14 @@ Private Sub LoadAvailableAccounts(Optional ByVal currentRel As String = "")
         acctID = lr.Range.Cells(1, 3).Value
         acctName = lr.Range.Cells(1, 4).Value
         relVal = lr.Range.Cells(1, 9).Value ' Relationship column
-        If Trim(relVal) = "" Then
+        ' If the account is not already assigned (or if it is part of the relationship being edited), list it.
+        If Trim(relVal) = "" Or (Not currentRel = "" And relVal = currentRel) Then
             lstAvailableAccounts.AddItem acctID & " - " & acctName
         End If
     Next lr
 End Sub
 
+' Lookup the Account Name given its Account#.
 Private Function GetAccountName(acctID As Variant) As String
     Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
     Set wsAcc = ThisWorkbook.Sheets("Accounts")
@@ -140,7 +143,6 @@ Private Sub cmdSave_Click()
         Next i
     End If
     
-    ' For each account in the selected list, add a record.
     Dim iItem As Long, parts() As String, acctID As String
     For iItem = 0 To lstSelectedAccounts.ListCount - 1
         parts = Split(lstSelectedAccounts.List(iItem), " - ")
@@ -156,13 +158,12 @@ Private Sub cmdSave_Click()
         End With
     Next iItem
     
-    ' Update the Accounts table for these accounts.
     UpdateAccountsRelationship relName, lstSelectedAccounts
-    
     MsgBox "Relationship saved successfully.", vbInformation
     Unload Me
 End Sub
 
+' Lookup Master Account ID from the Accounts table.
 Private Function GetMasterID(acctID As Variant) As Variant
     Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
     Set wsAcc = ThisWorkbook.Sheets("Accounts")
@@ -176,12 +177,13 @@ Private Function GetMasterID(acctID As Variant) As Variant
     GetMasterID = ""
 End Function
 
+' Update the Accounts table so that each account’s Relationship column is set.
 Private Sub UpdateAccountsRelationship(relName As String, selList As MSForms.ListBox)
     Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
     Set wsAcc = ThisWorkbook.Sheets("Accounts")
     Set loAcc = wsAcc.ListObjects("tblAccounts")
     Dim i As Long, acctID As String, parts() As String
-    ' Clear the relationship for accounts that have this relName.
+    ' First clear any account with this relationship name.
     For Each lr In loAcc.ListRows
         If lr.Range.Cells(1, 9).Value = relName Then lr.Range.Cells(1, 9).Value = ""
     Next lr
