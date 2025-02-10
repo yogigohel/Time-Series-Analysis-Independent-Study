@@ -1,27 +1,100 @@
-'==============================
-' Code for frmRelationship
-'==============================
 Option Explicit
 
+'--- Initialization ---
 Private Sub UserForm_Initialize()
-    LoadAccountList
+    Call PopulateRelationships
+    Call LoadAvailableAccounts
 End Sub
 
-Private Sub LoadAccountList()
-    Dim ws As Worksheet, lo As ListObject, lr As ListRow
-    Set ws = ThisWorkbook.Sheets("Accounts")
-    Set lo = ws.ListObjects("tblAccounts")
+Private Sub PopulateRelationships()
+    ' Populate cboRelationships with "New Relationship" plus existing (unique) relationship names.
+    Dim wsRel As Worksheet, loRel As ListObject, r As ListRow
+    Dim dict As Object, relName As String
+    Set dict = CreateObject("Scripting.Dictionary")
+    Set wsRel = ThisWorkbook.Sheets("Relationships")
+    Set loRel = wsRel.ListObjects("tblRelationships")
+    
+    cboRelationships.Clear
+    cboRelationships.AddItem "New Relationship"
+    For Each r In loRel.ListRows
+        relName = r.Range.Cells(1, 2).Value ' Column 2: Relationship Name
+        If relName <> "" Then
+            If Not dict.Exists(relName) Then
+                dict.Add relName, True
+                cboRelationships.AddItem relName
+            End If
+        End If
+    Next r
+    cboRelationships.Value = "New Relationship"
+    txtRelationshipName.Value = ""
+    lstSelectedAccounts.Clear
+End Sub
+
+Private Sub cboRelationships_Change()
+    If cboRelationships.Value <> "New Relationship" Then
+        txtRelationshipName.Value = cboRelationships.Value
+        Call LoadSelectedAccounts(cboRelationships.Value)
+        Call LoadAvailableAccounts(cboRelationships.Value)
+    Else
+        txtRelationshipName.Value = ""
+        lstSelectedAccounts.Clear
+        Call LoadAvailableAccounts
+    End If
+End Sub
+
+Private Sub LoadSelectedAccounts(ByVal relName As String)
+    Dim wsRel As Worksheet, loRel As ListObject, r As ListRow
+    lstSelectedAccounts.Clear
+    Set wsRel = ThisWorkbook.Sheets("Relationships")
+    Set loRel = wsRel.ListObjects("tblRelationships")
+    For Each r In loRel.ListRows
+        If r.Range.Cells(1, 2).Value = relName Then
+            Dim acctID As Variant, acctName As String
+            acctID = r.Range.Cells(1, 4).Value  ' Account#
+            acctName = GetAccountName(acctID)
+            lstSelectedAccounts.AddItem acctID & " - " & acctName
+        End If
+    Next r
+End Sub
+
+Private Sub LoadAvailableAccounts(Optional ByVal currentRel As String = "")
+    ' Load accounts that are not yet assigned a relationship.
+    Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
     lstAvailableAccounts.Clear
-    For Each lr In lo.ListRows
-        lstAvailableAccounts.AddItem lr.Range.Cells(1, 3).Value  ' Assumes Account# is column 3
+    Set wsAcc = ThisWorkbook.Sheets("Accounts")
+    Set loAcc = wsAcc.ListObjects("tblAccounts")
+    For Each lr In loAcc.ListRows
+        Dim acctID As Variant, acctName As String, relVal As String
+        acctID = lr.Range.Cells(1, 3).Value
+        acctName = lr.Range.Cells(1, 4).Value
+        relVal = lr.Range.Cells(1, 9).Value ' Relationship column
+        If Trim(relVal) = "" Then
+            lstAvailableAccounts.AddItem acctID & " - " & acctName
+        End If
     Next lr
 End Sub
 
+Private Function GetAccountName(acctID As Variant) As String
+    Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
+    Set wsAcc = ThisWorkbook.Sheets("Accounts")
+    Set loAcc = wsAcc.ListObjects("tblAccounts")
+    For Each lr In loAcc.ListRows
+        If lr.Range.Cells(1, 3).Value = acctID Then
+            GetAccountName = lr.Range.Cells(1, 4).Value
+            Exit Function
+        End If
+    Next lr
+    GetAccountName = ""
+End Function
+
+'--- Add/Remove Buttons ---
 Private Sub cmdAdd_Click()
     Dim selIndex As Long
     selIndex = lstAvailableAccounts.ListIndex
     If selIndex <> -1 Then
-        lstSelectedAccounts.AddItem lstAvailableAccounts.List(selIndex)
+        Dim itemText As String
+        itemText = lstAvailableAccounts.List(selIndex)
+        lstSelectedAccounts.AddItem itemText
         lstAvailableAccounts.RemoveItem selIndex
     Else
         MsgBox "Please select an account to add.", vbExclamation
@@ -32,70 +105,94 @@ Private Sub cmdRemove_Click()
     Dim selIndex As Long
     selIndex = lstSelectedAccounts.ListIndex
     If selIndex <> -1 Then
-        lstAvailableAccounts.AddItem lstSelectedAccounts.List(selIndex)
+        Dim itemText As String
+        itemText = lstSelectedAccounts.List(selIndex)
+        lstAvailableAccounts.AddItem itemText
         lstSelectedAccounts.RemoveItem selIndex
     Else
         MsgBox "Please select an account to remove.", vbExclamation
     End If
 End Sub
 
+'--- Save Button ---
 Private Sub cmdSave_Click()
-    Dim wsRel As Worksheet: Set wsRel = ThisWorkbook.Sheets("Relationships")
-    Dim nextRow As Long, i As Long
-    
-    If Trim(txtRelationshipName.Value) = "" Then
+    Dim relName As String
+    relName = Trim(txtRelationshipName.Value)
+    If relName = "" Then
         MsgBox "Please enter a Relationship name.", vbExclamation
         Exit Sub
     End If
     
-    If lstSelectedAccounts.ListCount = 0 Then
-        MsgBox "Please add at least one account to the relationship.", vbExclamation
-        Exit Sub
+    Dim wsRel As Worksheet, loRel As ListObject
+    Set wsRel = ThisWorkbook.Sheets("Relationships")
+    Set loRel = wsRel.ListObjects("tblRelationships")
+    
+    Dim editingExisting As Boolean
+    editingExisting = (cboRelationships.Value <> "New Relationship")
+    
+    ' If editing an existing relationship, delete its old records.
+    If editingExisting Then
+        Dim i As Long
+        For i = loRel.ListRows.Count To 1 Step -1
+            If loRel.ListRows(i).Range.Cells(1, 2).Value = cboRelationships.Value Then
+                loRel.ListRows(i).Delete
+            End If
+        Next i
     End If
     
-    nextRow = wsRel.Cells(wsRel.Rows.Count, 1).End(xlUp).Row + 1
-    For i = 0 To lstSelectedAccounts.ListCount - 1
-        With wsRel
-            .Cells(nextRow, 1).Value = nextRow - 1  ' Simple incremental ID
-            .Cells(nextRow, 2).Value = txtRelationshipName.Value
-            .Cells(nextRow, 3).Value = ""           ' Parent ID (if needed)
-            .Cells(nextRow, 4).Value = lstSelectedAccounts.List(i)
-            .Cells(nextRow, 5).Value = GetMasterID(lstSelectedAccounts.List(i))
+    ' For each account in the selected list, add a record.
+    Dim iItem As Long, parts() As String, acctID As String
+    For iItem = 0 To lstSelectedAccounts.ListCount - 1
+        parts = Split(lstSelectedAccounts.List(iItem), " - ")
+        acctID = parts(0)
+        Dim newRow As ListRow
+        Set newRow = loRel.ListRows.Add
+        With newRow.Range
+            .Cells(1, 1).Value = wsRel.Cells(wsRel.Rows.Count, 1).End(xlUp).Row ' incremental ID
+            .Cells(1, 2).Value = relName
+            .Cells(1, 3).Value = ""  ' Parent ID (if needed)
+            .Cells(1, 4).Value = acctID
+            .Cells(1, 5).Value = GetMasterID(acctID)
         End With
-        nextRow = nextRow + 1
-    Next i
+    Next iItem
     
-    UpdateAccountRelationships txtRelationshipName.Value, lstSelectedAccounts
+    ' Update the Accounts table for these accounts.
+    UpdateAccountsRelationship relName, lstSelectedAccounts
     
     MsgBox "Relationship saved successfully.", vbInformation
     Unload Me
 End Sub
 
-' Helper: Look up Master Account ID for a given Account#
 Private Function GetMasterID(acctID As Variant) As Variant
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets("Accounts")
-    Dim lo As ListObject: Set lo = ws.ListObjects("tblAccounts")
-    Dim rngFound As Range
-    Set rngFound = lo.DataBodyRange.Columns(3).Find(What:=acctID, LookIn:=xlValues, LookAt:=xlWhole)
-    If Not rngFound Is Nothing Then
-        GetMasterID = rngFound.Offset(0, -2).Value  ' Assumes column 1 is Master Account ID
-    Else
-        GetMasterID = ""
-    End If
+    Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
+    Set wsAcc = ThisWorkbook.Sheets("Accounts")
+    Set loAcc = wsAcc.ListObjects("tblAccounts")
+    For Each lr In loAcc.ListRows
+        If lr.Range.Cells(1, 3).Value = acctID Then
+            GetMasterID = lr.Range.Cells(1, 1).Value ' Master Account ID is in column 1
+            Exit Function
+        End If
+    Next lr
+    GetMasterID = ""
 End Function
 
-' Update the Accounts table with the new Relationship name.
-Private Sub UpdateAccountRelationships(relName As String, selList As MSForms.ListBox)
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets("Accounts")
-    Dim lo As ListObject: Set lo = ws.ListObjects("tblAccounts")
-    Dim i As Long, acctID As Variant, lr As ListRow
+Private Sub UpdateAccountsRelationship(relName As String, selList As MSForms.ListBox)
+    Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
+    Set wsAcc = ThisWorkbook.Sheets("Accounts")
+    Set loAcc = wsAcc.ListObjects("tblAccounts")
+    Dim i As Long, acctID As String, parts() As String
+    ' Clear the relationship for accounts that have this relName.
+    For Each lr In loAcc.ListRows
+        If lr.Range.Cells(1, 9).Value = relName Then lr.Range.Cells(1, 9).Value = ""
+    Next lr
+    ' Update with the new selection.
     For i = 0 To selList.ListCount - 1
-        acctID = selList.List(i)
-        For Each lr In lo.ListRows
-            If lr.Range.Cells(1, 3).Value = acctID Then
-                lr.Range.Cells(1, 9).Value = relName  ' Column 9 is "Relationship"
-                Exit For
-            End If
-        Next lr
+        parts = Split(selList.List(i), " - ")
+        acctID = parts(0)
+        Dim found As Range
+        Set found = loAcc.DataBodyRange.Columns(3).Find(What:=acctID, LookIn:=xlValues, LookAt:=xlWhole)
+        If Not found Is Nothing Then
+            found.Offset(0, 6).Value = relName ' Column 9 holds Relationship
+        End If
     Next i
 End Sub
