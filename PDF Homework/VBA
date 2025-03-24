@@ -228,92 +228,62 @@ Public Sub LoadOrCreateRelationship()
     MsgBox "Load complete. Accounts for '" & relName & "' shown (if any).", vbInformation
 End Sub
 
-Public Sub SaveRelationship()
+Public Sub SaveRelationshipSimple()
     Dim wsB As Worksheet, wsM As Worksheet
-    Dim relName As String, freq As Variant
-    Dim i As Long, lastRowB As Long
+    Dim relName As String
+    Dim builderRow As Long, lastRowB As Long
+    Dim acctNum As String
+    Dim foundRow As Long
     
-    Set wsB = ThisWorkbook.Worksheets(SH_RELATIONSHIP_BUILDER)
-    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    Set wsB = ThisWorkbook.Worksheets("Relationship_Builder")
+    Set wsM = ThisWorkbook.Worksheets("Master_Table")
     
+    ' Get the relationship name from cell B2.
     relName = Trim(wsB.Range("B2").Value)
     If relName = "" Then
-        MsgBox "Please enter a Relationship Name in B2 first!", vbExclamation
+        MsgBox "Please enter a Relationship Name in cell B2.", vbExclamation
         Exit Sub
     End If
     
-    freq = wsB.Range("B3").Value ' can be blank or numeric
-    If Not IsNumeric(freq) Then freq = 0
-    
-    ' 1) Build a list (dictionary) of all account# the user wants
-    Dim dictWanted As Object
-    Set dictWanted = CreateObject("Scripting.Dictionary")
-    
-    ' Scan from row6 downward for any entered account
+    ' Determine the last row in the builder (assumes account numbers start at row 6 in Column A).
     lastRowB = wsB.Cells(wsB.Rows.Count, 1).End(xlUp).Row
-    Dim acctName As String
-    Dim acct As Variant  ' Changed from String to Variant
     
-    For i = 6 To lastRowB
-        If Application.CountA(wsB.Rows(i)) > 0 Then
-            acct = Trim(wsB.Cells(i, 1).Text)
-            acctName = wsB.Cells(i, 2).Value
-            
-            If acct <> "" Then
-                ' store in dictionary
-                dictWanted(acct) = acctName
+    ' Loop over each account number in the builder.
+    For builderRow = 6 To lastRowB
+        acctNum = Trim(wsB.Cells(builderRow, 1).Text)
+        If acctNum <> "" Then
+            ' Use helper function to find the row for this account in Master_Table.
+            foundRow = FindAccountRow(wsM, acctNum)
+            If foundRow > 0 Then
+                ' If found, update the Relationship Name (assumed to be in column 7).
+                wsM.Cells(foundRow, 7).Value = relName
+            Else
+                ' If not found, add a new row at the bottom of Master_Table.
+                Dim newRow As Long
+                newRow = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row + 1
+                wsM.Cells(newRow, 1).NumberFormat = "@"  ' Ensure text format to preserve leading zeros.
+                wsM.Cells(newRow, 1).Value = acctNum
+                wsM.Cells(newRow, 7).Value = relName
             End If
+        End If
+    Next builderRow
+    
+    MsgBox "Relationship '" & relName & "' saved in Master_Table.", vbInformation
+End Sub
+
+' Helper: Finds the row in Master_Table for a given account number.
+' Returns 0 if not found.
+Public Function FindAccountRow(ws As Worksheet, acctNumber As String) As Long
+    Dim lastRow As Long, i As Long
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lastRow
+        If Trim(ws.Cells(i, 1).Text) = acctNumber Then
+            FindAccountRow = i
+            Exit Function
         End If
     Next i
-    
-    ' 2) Remove this relationship from any accounts in Master_Table that are no longer in dictWanted.
-    Dim lrM As Long, rowM As Long
-    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
-    
-    For rowM = 2 To lrM
-        If wsM.Cells(rowM, 7).Value = relName Then
-            acct = Trim(wsM.Cells(rowM, 1).Text)
-            If Not dictWanted.Exists(acct) Then
-                wsM.Cells(rowM, 7).ClearContents  ' Relationship Name
-                wsM.Cells(rowM, 9).ClearContents  ' Next Meeting Date
-                wsM.Cells(rowM, 11).ClearContents ' Frequency
-            End If
-        End If
-    Next rowM
-    
-    ' 3) For each account in dictWanted, update or add it in Master_Table.
-    Dim foundRow As Long
-    Dim nextMeet As Variant, lastMeet As Variant
-    
-    For Each acct In dictWanted.Keys
-        foundRow = FindAccountRow(wsM, acct)
-        If foundRow = 0 Then
-            lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
-            foundRow = lrM + 1
-            
-            wsM.Cells(foundRow, 1).NumberFormat = "@"
-            wsM.Cells(foundRow, 1).Value = acct       ' Account#
-            wsM.Cells(foundRow, 2).Value = dictWanted(acct) ' Account Name from builder
-        End If
-        
-        wsM.Cells(foundRow, 7).Value = relName
-        wsM.Cells(foundRow, 11).Value = freq
-        
-        lastMeet = wsM.Cells(foundRow, 8).Value  ' Last Meeting Date
-        If freq > 0 Then
-            If IsDate(lastMeet) Then
-                nextMeet = DateAdd("d", freq, lastMeet)
-            Else
-                nextMeet = DateAdd("d", freq, Date)
-            End If
-            wsM.Cells(foundRow, 9).Value = nextMeet
-        Else
-            wsM.Cells(foundRow, 9).ClearContents
-        End If
-    Next acct
-    
-    MsgBox "Relationship '" & relName & "' saved. Master_Table updated.", vbInformation
-End Sub
+    FindAccountRow = 0
+End Function
 
 ' Finds the row in MASTER_TABLE for a given account# (string).
 ' Returns 0 if not found.
