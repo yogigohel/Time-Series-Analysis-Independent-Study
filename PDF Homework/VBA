@@ -245,13 +245,14 @@ Public Sub SaveRelationship()
     freq = wsB.Range("B3").Value ' can be blank or numeric
     If Not IsNumeric(freq) Then freq = 0
     
-    ' 1) Build a list (dictionary or collection) of all account# the user wants
+    ' 1) Build a list (dictionary) of all account# the user wants
     Dim dictWanted As Object
     Set dictWanted = CreateObject("Scripting.Dictionary")
     
     ' Scan from row6 downward for any entered account
     lastRowB = wsB.Cells(wsB.Rows.Count, 1).End(xlUp).Row
-    Dim acct As String, acctName As String
+    Dim acctName As String
+    Dim acct As Variant  ' Changed from String to Variant
     
     For i = 6 To lastRowB
         If Application.CountA(wsB.Rows(i)) > 0 Then
@@ -265,18 +266,14 @@ Public Sub SaveRelationship()
         End If
     Next i
     
-    ' 2) We need to remove this relationship from any accounts in Master_Table that are no longer in dictWanted
-    '    Then we also need to add/update any that are in dictWanted.
+    ' 2) Remove this relationship from any accounts in Master_Table that are no longer in dictWanted.
     Dim lrM As Long, rowM As Long
     lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
     
-    ' We'll track which accounts in Master_Table belong to relName.
-    ' If they are not in dictWanted, we unassign them.
     For rowM = 2 To lrM
         If wsM.Cells(rowM, 7).Value = relName Then
             acct = Trim(wsM.Cells(rowM, 1).Text)
             If Not dictWanted.Exists(acct) Then
-                ' The user removed this acct => clear relationship
                 wsM.Cells(rowM, 7).ClearContents  ' Relationship Name
                 wsM.Cells(rowM, 9).ClearContents  ' Next Meeting Date
                 wsM.Cells(rowM, 11).ClearContents ' Frequency
@@ -284,30 +281,25 @@ Public Sub SaveRelationship()
         End If
     Next rowM
     
-    ' 3) For each account in dictWanted, we set it in Master_Table
-    '    If the account does not exist in Master_Table, we add a new row for it.
+    ' 3) For each account in dictWanted, update or add it in Master_Table.
     Dim foundRow As Long
     Dim nextMeet As Variant, lastMeet As Variant
     
     For Each acct In dictWanted.Keys
         foundRow = FindAccountRow(wsM, acct)
         If foundRow = 0 Then
-            ' Not found => add new row at bottom
             lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
             foundRow = lrM + 1
             
-            ' Minimal info
             wsM.Cells(foundRow, 1).NumberFormat = "@"
-            wsM.Cells(foundRow, 1).Value = acct       ' account#
-            wsM.Cells(foundRow, 2).Value = dictWanted(acct) ' name from builder if any
+            wsM.Cells(foundRow, 1).Value = acct       ' Account#
+            wsM.Cells(foundRow, 2).Value = dictWanted(acct) ' Account Name from builder
         End If
         
-        ' Assign relationship
         wsM.Cells(foundRow, 7).Value = relName
         wsM.Cells(foundRow, 11).Value = freq
         
-        ' Recalc next meeting date
-        lastMeet = wsM.Cells(foundRow, 8).Value
+        lastMeet = wsM.Cells(foundRow, 8).Value  ' Last Meeting Date
         If freq > 0 Then
             If IsDate(lastMeet) Then
                 nextMeet = DateAdd("d", freq, lastMeet)
