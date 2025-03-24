@@ -1,19 +1,19 @@
 Option Explicit
 
-'=========================================
-'      SHEET NAME CONSTANTS
-'=========================================
+' ==========================
+'  SHEET NAMES (constants)
+' ==========================
 Public Const SH_DATA_UPLOAD As String = "Data_Upload"
 Public Const SH_MASTER_TABLE As String = "Master_Table"
-Public Const SH_RELATIONSHIPS As String = "Relationships"
 Public Const SH_RELATIONSHIP_BUILDER As String = "Relationship_Builder"
 Public Const SH_MEETING_CALENDAR As String = "Meeting_Calendar"
-Public Const SH_SCHEDULE_VIEW As String = "Schedule_View" ' optional
+Public Const SH_DASHBOARD As String = "Dashboard"
 
-'=========================================
-'      HEADERS FOR DATA IMPORT
-'      (EXACT STRINGS in row 1)
-'=========================================
+' Adjust if you have a separate "Schedule_View" or others...
+
+' =========================================
+'  HEADERS for Data_Upload
+' =========================================
 Public Const HDR_ACCOUNT_NUM As String = "Account#"
 Public Const HDR_ACCT_NAME As String = "Acct Name"
 Public Const HDR_MASTER_ACCT_ID As String = "Master Account ID"
@@ -21,19 +21,30 @@ Public Const HDR_MASTER_ACCT_NAME As String = "Master Account Name"
 Public Const HDR_INVEST_DESC As String = "Investment Solution Desc"
 Public Const HDR_TOTAL_VALUE As String = "Total Market Value"
 
-'=========================================
-'   1) UPLOAD & PROCESS (Data_Upload)
-'=========================================
+' Columns in MASTER_TABLE (example layout):
+'   1. Account#
+'   2. Acct Name
+'   3. Master Acct ID
+'   4. Master Acct Name
+'   5. Investment Solution
+'   6. Total Market Value
+'   7. Relationship Name
+'   8. Last Meeting Date
+'   9. Next Meeting Date
+'   10. Meeting Notes
+'   11. Meeting Frequency (Days)
+
+' ==========================================================
+'  1) UPLOAD & PROCESS from Data_Upload to Master_Table
+' ==========================================================
 Public Sub Upload_And_Process_Data()
-    Dim wsUp As Worksheet, wsMaster As Worksheet
-    Dim lastRowUp As Long, lastRowM As Long
-    Dim cAccount As Long, cAcctName As Long
-    Dim cMasterID As Long, cMasterName As Long
-    Dim cInvestDesc As Long, cValue As Long
-    Dim i As Long
+    Dim wsUp As Worksheet, wsM As Worksheet
+    Dim lastRowUp As Long, i As Long, nextRowM As Long
+    Dim colAcct As Long, colName As Long, colMastID As Long, colMastName As Long
+    Dim colInvDesc As Long, colVal As Long
     
     Set wsUp = ThisWorkbook.Worksheets(SH_DATA_UPLOAD)
-    Set wsMaster = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
     
     ' Find last row in Data_Upload
     lastRowUp = wsUp.Cells(wsUp.Rows.Count, 1).End(xlUp).Row
@@ -43,310 +54,526 @@ Public Sub Upload_And_Process_Data()
     End If
     
     ' Identify columns by header
-    cAccount = GetColumnByHeader(wsUp, HDR_ACCOUNT_NUM)
-    cAcctName = GetColumnByHeader(wsUp, HDR_ACCT_NAME)
-    cMasterID = GetColumnByHeader(wsUp, HDR_MASTER_ACCT_ID)
-    cMasterName = GetColumnByHeader(wsUp, HDR_MASTER_ACCT_NAME)
-    cInvestDesc = GetColumnByHeader(wsUp, HDR_INVEST_DESC)
-    cValue = GetColumnByHeader(wsUp, HDR_TOTAL_VALUE)
+    colAcct = GetColumnByHeader(wsUp, HDR_ACCOUNT_NUM)
+    colName = GetColumnByHeader(wsUp, HDR_ACCT_NAME)
+    colMastID = GetColumnByHeader(wsUp, HDR_MASTER_ACCT_ID)
+    colMastName = GetColumnByHeader(wsUp, HDR_MASTER_ACCT_NAME)
+    colInvDesc = GetColumnByHeader(wsUp, HDR_INVEST_DESC)
+    colVal = GetColumnByHeader(wsUp, HDR_TOTAL_VALUE)
     
-    ' Check found
-    If cAccount = 0 Or cAcctName = 0 Or cMasterID = 0 Or cMasterName = 0 Or cInvestDesc = 0 Or cValue = 0 Then
+    If colAcct = 0 Or colName = 0 Or colMastID = 0 Or colMastName = 0 Or colInvDesc = 0 Or colVal = 0 Then
         MsgBox "One or more required headers not found in Data_Upload!", vbCritical
         Exit Sub
     End If
     
-    ' Clear existing data in Master_Table except headers
-    wsMaster.Rows("2:" & wsMaster.Rows.Count).ClearContents
+    ' Clear old data in Master_Table except headers
+    wsM.Rows("2:" & wsM.Rows.Count).ClearContents
     
-    ' Copy row by row to Master_Table
-    ' We'll define Master_Table columns as:
-    '   1: Account#
-    '   2: Acct Name
-    '   3: Master Acct ID
-    '   4: Master Acct Name
-    '   5: Investment Solution
-    '   6: Total Market Value
-    '   7: Relationship Name
-    '   8: Last Meeting Date
-    '   9: Next Meeting Date
-    '   10: Meeting Notes
-    '   11: Meeting Frequency (optional)
-    lastRowM = 2
+    nextRowM = 2
     
-    Dim acctStr As String
-    Dim rowIsBlank As Boolean
+    ' Copy row by row
+    Dim rowUp As Long, isBlank As Boolean
+    Dim acctText As String
     
-    For i = 2 To lastRowUp
-        ' Check if row is empty
-        rowIsBlank = (Application.CountA(wsUp.Rows(i)) = 0)
-        If Not rowIsBlank Then
-            ' Preserve leading zeros for "Account#"
-            ' We'll read from .Text (not .Value) and store it as text
-            acctStr = wsUp.Cells(i, cAccount).Text ' read displayed text exactly
+    For rowUp = 2 To lastRowUp
+        If Application.CountA(wsUp.Rows(rowUp)) > 0 Then
+            ' Read account# as text to preserve zeros
+            acctText = wsUp.Cells(rowUp, colAcct).Text
             
-            With wsMaster
-                ' Format the destination cell as text to prevent losing zeros
-                .Cells(lastRowM, 1).NumberFormat = "@"
-                .Cells(lastRowM, 1).Value = acctStr
+            ' Write to Master_Table
+            With wsM
+                .Cells(nextRowM, 1).NumberFormat = "@" ' text format
+                .Cells(nextRowM, 1).Value = acctText
                 
-                ' The other columns we can copy normally
-                .Cells(lastRowM, 2).Value = wsUp.Cells(i, cAcctName).Value
-                .Cells(lastRowM, 3).Value = wsUp.Cells(i, cMasterID).Text    ' also preserve leading zeros if needed
-                .Cells(lastRowM, 4).Value = wsUp.Cells(i, cMasterName).Value
-                .Cells(lastRowM, 5).Value = wsUp.Cells(i, cInvestDesc).Value
-                .Cells(lastRowM, 6).Value = wsUp.Cells(i, cValue).Value
+                ' The rest
+                .Cells(nextRowM, 2).Value = wsUp.Cells(rowUp, colName).Value
+                .Cells(nextRowM, 3).NumberFormat = "@" ' in case Master Acct ID also has leading zeros
+                .Cells(nextRowM, 3).Value = wsUp.Cells(rowUp, colMastID).Text
+                .Cells(nextRowM, 4).Value = wsUp.Cells(rowUp, colMastName).Value
+                .Cells(nextRowM, 5).Value = wsUp.Cells(rowUp, colInvDesc).Value
+                .Cells(nextRowM, 6).Value = wsUp.Cells(rowUp, colVal).Value
             End With
-            
-            lastRowM = lastRowM + 1
+            nextRowM = nextRowM + 1
         End If
-    Next i
+    Next rowUp
     
-    ' Remove duplicates if necessary based on col 1 (Account#)
-    RemoveDuplicates wsMaster, 1
+    ' Optionally remove duplicates by Account# (col 1)
+    RemoveDuplicates wsM, 1
     
-    ' Optionally call a routine to maintain relationships if they already exist
-    ' (If Master_Table had old Relationship Name data, we might preserve them
-    '  by matching Account# from old data. That is a more advanced scenario.
-    '  For now, let's keep it straightforward.)
-    
-    MsgBox "Data imported to Master_Table. Leading zeros preserved for Account#.", vbInformation
+    MsgBox "Data imported to Master_Table successfully.", vbInformation
 End Sub
 
-'=========================================
-'   2) RELATIONSHIP BUILDER
-'=========================================
-' A macro tied to a button "Sync to Relationships" on Relationship_Builder.
-' Loops each row on Relationship_Builder and updates the 'Relationships' sheet.
-' Then calls UpdateMasterTable_Relationships to ensure those relationships
-' appear in Master_Table.
-Public Sub Sync_Relationships()
-    Dim wsBld As Worksheet, wsRel As Worksheet
-    Dim lastRowBld As Long, i As Long
-    Dim targetRow As Long
-    
-    Set wsBld = ThisWorkbook.Worksheets(SH_RELATIONSHIP_BUILDER)
-    Set wsRel = ThisWorkbook.Worksheets(SH_RELATIONSHIPS)
-    
-    ' Clear existing data in 'Relationships' (except headers)
-    wsRel.Rows("2:" & wsRel.Rows.Count).ClearContents
-    
-    ' Find the last row in Relationship_Builder
-    lastRowBld = wsBld.Cells(wsBld.Rows.Count, 1).End(xlUp).Row
-    If lastRowBld < 2 Then
-        MsgBox "No data in 'Relationship_Builder'!", vbExclamation
-        Exit Sub
-    End If
-    
-    targetRow = 2
-    For i = 2 To lastRowBld
-        ' If row is blank, skip
-        If Application.CountA(wsBld.Rows(i)) = 0 Then GoTo SkipRow
-        
-        ' Layout: 
-        '   A: Relationship Name
-        '   B: Account#
-        '   C: (Description / Notes)
-        '   D: Frequency (Days)
-        '   E: (Action or unused)
-        
-        With wsRel
-            .Cells(targetRow, 1).Value = wsBld.Cells(i, 1).Value ' Relationship Name
-            .Cells(targetRow, 2).NumberFormat = "@"             ' Preserve leading zeros for Account# 
-            .Cells(targetRow, 2).Value = wsBld.Cells(i, 2).Text
-            .Cells(targetRow, 3).Value = wsBld.Cells(i, 3).Value ' Notes or desc
-            .Cells(targetRow, 4).Value = wsBld.Cells(i, 4).Value ' Frequency
-        End With
-        targetRow = targetRow + 1
-SkipRow:
-    Next i
-    
-    ' Now update Master_Table to reflect these relationships
-    UpdateMasterTable_Relationships
-    
-    MsgBox "Relationships synced successfully!", vbInformation
-End Sub
-
-'=========================================
-'   3) UPDATE Master_Table RELATIONSHIPS
-'=========================================
-' This reads the 'Relationships' sheet and sets the Relationship Name
-' in 'Master_Table' for each matching Account#.
-' If there's a frequency, we also compute Next Meeting Date from Last Meeting
-' or from Today if LastMeeting is blank.
-Public Sub UpdateMasterTable_Relationships()
-    Dim wsM As Worksheet, wsRel As Worksheet
-    Dim lastRowM As Long, lastRowR As Long
-    Dim dictRel As Object
-    Dim i As Long
-    
-    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
-    Set wsRel = ThisWorkbook.Worksheets(SH_RELATIONSHIPS)
-    
-    lastRowM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
-    lastRowR = wsRel.Cells(wsRel.Rows.Count, 1).End(xlUp).Row
-    
-    If lastRowM < 2 Or lastRowR < 2 Then Exit Sub
-    
-    ' Build dictionary keyed by Account#, storing "RelationshipName|Frequency"
-    Set dictRel = CreateObject("Scripting.Dictionary")
-    
-    Dim acct As String, relName As String, freq As Variant
-    Dim combo As String
-    
-    For i = 2 To lastRowR
-        acct = Trim(wsRel.Cells(i, 2).Text) ' read as text
-        relName = Trim(wsRel.Cells(i, 1).Value)
-        freq = wsRel.Cells(i, 4).Value
-        
-        If acct <> "" And relName <> "" Then
-            dictRel(acct) = relName & "|" & freq
-        End If
-    Next i
-    
-    Dim j As Long, item As Variant
-    Dim lastMeeting As Variant, nextMeeting As Variant
-    
-    For j = 2 To lastRowM
-        acct = Trim(wsM.Cells(j, 1).Text) ' col 1: Account#
-        If dictRel.Exists(acct) Then
-            item = dictRel(acct)
-            relName = Split(item, "|")(0)
-            freq = Val(Split(item, "|")(1))
-            
-            ' Write relationship name (col 7 in Master_Table)
-            wsM.Cells(j, 7).Value = relName
-            
-            ' If frequency is valid, set NextMeeting
-            If freq > 0 Then
-                lastMeeting = wsM.Cells(j, 8).Value ' col 8
-                If IsDate(lastMeeting) Then
-                    nextMeeting = DateAdd("d", freq, lastMeeting)
-                Else
-                    nextMeeting = DateAdd("d", freq, Date)
-                End If
-                wsM.Cells(j, 9).Value = nextMeeting
-            End If
-        Else
-            ' If not in dictionary, maybe clear relationship columns?
-            ' wsM.Cells(j,7).ClearContents
-            ' wsM.Cells(j,9).ClearContents
-        End If
-    Next j
-    
-    ' Format date columns if desired
-    wsM.Range("H:H").NumberFormat = "mm/dd/yyyy" ' Last Meeting
-    wsM.Range("I:I").NumberFormat = "mm/dd/yyyy" ' Next Meeting
-End Sub
-
-'=========================================
-'   4) REFRESH MEETING CALENDAR
-'=========================================
+' =================================================
+'   2) REFRESH MEETING CALENDAR
+' =================================================
 Public Sub Refresh_Meeting_Calendar()
     Dim wsCal As Worksheet, wsM As Worksheet
-    Dim lastRowM As Long, lastRowCal As Long
-    Dim i As Long, destRow As Long
+    Dim lrM As Long, rowDest As Long, i As Long
     
     Set wsCal = ThisWorkbook.Worksheets(SH_MEETING_CALENDAR)
     Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
     
-    ' Clear old data in Meeting_Calendar except headers
+    ' Clear old data except headers
     wsCal.Rows("2:" & wsCal.Rows.Count).ClearContents
     
-    lastRowM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
-    destRow = 2
+    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    rowDest = 2
     
-    For i = 2 To lastRowM
+    For i = 2 To lrM
         If Application.CountA(wsM.Rows(i)) > 0 Then
-            wsCal.Cells(destRow, 1).Value = wsM.Cells(i, 7).Value ' Relationship Name
-            wsCal.Cells(destRow, 2).NumberFormat = "@" ' preserve leading zeros for Account#
-            wsCal.Cells(destRow, 2).Value = wsM.Cells(i, 1).Text
-            wsCal.Cells(destRow, 3).Value = wsM.Cells(i, 2).Value ' Acct Name
-            wsCal.Cells(destRow, 4).Value = wsM.Cells(i, 8).Value ' Last Meeting
-            wsCal.Cells(destRow, 5).Value = wsM.Cells(i, 9).Value ' Next Meeting
-            wsCal.Cells(destRow, 6).Value = wsM.Cells(i, 10).Value ' Meeting Notes
-            destRow = destRow + 1
+            ' Populate Meeting_Calendar
+            ' For example:
+            '   ColA: Relationship Name  (master col 7)
+            '   ColB: Account#          (master col 1)
+            '   ColC: Acct Name         (master col 2)
+            '   ColD: Last Meeting      (master col 8)
+            '   ColE: Next Meeting      (master col 9)
+            '   ColF: Meeting Notes     (master col 10)
+            
+            wsCal.Cells(rowDest, 1).Value = wsM.Cells(i, 7).Value ' Relationship
+            wsCal.Cells(rowDest, 2).NumberFormat = "@"
+            wsCal.Cells(rowDest, 2).Value = wsM.Cells(i, 1).Text ' Account#
+            wsCal.Cells(rowDest, 3).Value = wsM.Cells(i, 2).Value ' Acct Name
+            wsCal.Cells(rowDest, 4).Value = wsM.Cells(i, 8).Value ' Last Meeting
+            wsCal.Cells(rowDest, 5).Value = wsM.Cells(i, 9).Value ' Next Meeting
+            wsCal.Cells(rowDest, 6).Value = wsM.Cells(i, 10).Value ' Notes
+            rowDest = rowDest + 1
         End If
     Next i
     
-    ApplyCalendarConditionalFormatting wsCal, destRow - 1
-    MsgBox "Meeting_Calendar refreshed!", vbInformation
+    ' Optionally apply color-coding
+    ApplyCalendarConditionalFormatting wsCal, rowDest - 1
+    
+    MsgBox "Meeting Calendar refreshed!", vbInformation
 End Sub
+Option Explicit
 
-'=========================================
-'   5) OPTIONAL: SCHEDULE VIEW
-'=========================================
-Public Sub Refresh_Schedule_View()
-    Dim wsSched As Worksheet, wsM As Worksheet
-    Dim lastRowM As Long, i As Long, destRow As Long
+' Columns in Master_Table:
+'   (1) Account#
+'   (2) Acct Name
+'   (3) Master Acct ID
+'   (4) Master Acct Name
+'   (5) Investment Solution
+'   (6) Total Market Value
+'   (7) Relationship Name
+'   (8) Last Meeting Date
+'   (9) Next Meeting Date
+'   (10) Meeting Notes
+'   (11) Meeting Frequency (Days)
+
+' Relationship_Builder layout:
+'   Cell B2: Relationship Name
+'   Cell B3: Meeting Frequency (Days)
+'   Row5: [Headers => "Account#", "Account Name"]
+'   Row6+: data
+
+Public Sub LoadOrCreateRelationship()
+    Dim wsB As Worksheet, wsM As Worksheet
+    Dim relName As String, freq As Variant
+    Dim lrM As Long, i As Long, rowDest As Long
     
-    On Error Resume Next
-    Set wsSched = ThisWorkbook.Worksheets(SH_SCHEDULE_VIEW)
-    On Error GoTo 0
-    If wsSched Is Nothing Then Exit Sub
-    
+    Set wsB = ThisWorkbook.Worksheets(SH_RELATIONSHIP_BUILDER)
     Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
-    lastRowM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
     
-    wsSched.Rows("2:" & wsSched.Rows.Count).ClearContents
+    ' 1) Read the Relationship Name from B2
+    relName = Trim(wsB.Range("B2").Value)
+    If relName = "" Then
+        MsgBox "Please enter a Relationship Name in B2.", vbExclamation
+        Exit Sub
+    End If
     
-    destRow = 2
-    For i = 2 To lastRowM
-        If Application.CountA(wsM.Rows(i)) > 0 Then
-            wsSched.Cells(destRow, 1).Value = wsM.Cells(i, 7).Value ' Relationship Name
-            ' Basic logic for status
-            Dim nxt As Variant
-            nxt = wsM.Cells(i, 9).Value
-            If IsDate(nxt) Then
-                If nxt < Date Then
-                    wsSched.Cells(destRow, 2).Value = "Overdue"
-                ElseIf nxt >= Date And nxt <= Date + 7 Then
-                    wsSched.Cells(destRow, 2).Value = "Upcoming"
-                Else
-                    wsSched.Cells(destRow, 2).Value = "Future"
-                End If
-            Else
-                wsSched.Cells(destRow, 2).Value = "No Meeting Scheduled"
+    ' 2) Clear existing rows in Relationship_Builder (except row5 headers)
+    wsB.Rows("6:" & wsB.Rows.Count).ClearContents
+    
+    ' 3) Look in MASTER_TABLE for any accounts that match this relationship
+    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    rowDest = 6
+    
+    Dim foundAny As Boolean: foundAny = False
+    Dim relFreq As Variant, freqCollect As New Collection
+    
+    For i = 2 To lrM
+        If wsM.Cells(i, 7).Value = relName Then ' col7 = Relationship
+            foundAny = True
+            ' Insert that account into Relationship_Builder
+            wsB.Cells(rowDest, 1).NumberFormat = "@"
+            wsB.Cells(rowDest, 1).Value = wsM.Cells(i, 1).Text ' account#
+            wsB.Cells(rowDest, 2).Value = wsM.Cells(i, 2).Value ' AcctName
+            rowDest = rowDest + 1
+            
+            ' Also collect frequency if set
+            relFreq = wsM.Cells(i, 11).Value ' col11
+            If IsNumeric(relFreq) And relFreq > 0 Then
+                freqCollect.Add relFreq
             End If
-            wsSched.Cells(destRow, 3).Value = wsM.Cells(i, 8).Value ' Last Meeting
-            wsSched.Cells(destRow, 4).Value = wsM.Cells(i, 9).Value ' Next Meeting
-            destRow = destRow + 1
         End If
     Next i
     
-    MsgBox "Schedule_View refreshed!", vbInformation
+    ' 4) If we found at least one row, try to unify frequency
+    ' If multiple accounts have different freq, we can choose the first or show a note
+    If foundAny Then
+        If freqCollect.Count > 0 Then
+            ' For simplicity, pick the first frequency
+            freq = freqCollect.Item(1)
+            wsB.Range("B3").Value = freq
+        Else
+            ' Maybe they had no freq
+            wsB.Range("B3").ClearContents
+        End If
+    Else
+        ' No existing relationship found => brand new
+        wsB.Range("B3").ClearContents
+    End If
+    
+    MsgBox "Load complete. Accounts for '" & relName & "' shown (if any).", vbInformation
 End Sub
 
-'=========================================
-'   HELPER: ApplyCalendarConditionalFormatting
-'=========================================
-Private Sub ApplyCalendarConditionalFormatting(ws As Worksheet, ByVal lastDataRow As Long)
-    If lastDataRow < 2 Then Exit Sub
-    Dim rngDates As Range
-    Set rngDates = ws.Range("E2:E" & lastDataRow) ' Next Meeting in col E
+Public Sub SaveRelationship()
+    Dim wsB As Worksheet, wsM As Worksheet
+    Dim relName As String, freq As Variant
+    Dim i As Long, lastRowB As Long
     
-    rngDates.FormatConditions.Delete
+    Set wsB = ThisWorkbook.Worksheets(SH_RELATIONSHIP_BUILDER)
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
     
-    ' Overdue < Today
-    With rngDates.FormatConditions.Add(Type:=xlCellValue, Operator:=xlLess, Formula1:="=TODAY()")
-        .Interior.Color = RGB(255, 0, 0)
-    End With
+    relName = Trim(wsB.Range("B2").Value)
+    If relName = "" Then
+        MsgBox "Please enter a Relationship Name in B2 first!", vbExclamation
+        Exit Sub
+    End If
     
-    ' Upcoming <= Today+7
-    With rngDates.FormatConditions.Add(Type:=xlExpression, Formula1:="=AND(E2>=TODAY(),E2<=TODAY()+7)")
-        .Interior.Color = RGB(255, 165, 0)
-    End With
+    freq = wsB.Range("B3").Value ' can be blank or numeric
+    If Not IsNumeric(freq) Then freq = 0
     
-    ' Future > Today+7
-    With rngDates.FormatConditions.Add(Type:=xlExpression, Formula1:="=E2>TODAY()+7")
-        .Interior.Color = RGB(0, 255, 0)
-    End With
+    ' 1) Build a list (dictionary or collection) of all account# the user wants
+    Dim dictWanted As Object
+    Set dictWanted = CreateObject("Scripting.Dictionary")
+    
+    ' Scan from row6 downward for any entered account
+    lastRowB = wsB.Cells(wsB.Rows.Count, 1).End(xlUp).Row
+    Dim acct As String, acctName As String
+    
+    For i = 6 To lastRowB
+        If Application.CountA(wsB.Rows(i)) > 0 Then
+            acct = Trim(wsB.Cells(i, 1).Text)
+            acctName = wsB.Cells(i, 2).Value
+            
+            If acct <> "" Then
+                ' store in dictionary
+                dictWanted(acct) = acctName
+            End If
+        End If
+    Next i
+    
+    ' 2) We need to remove this relationship from any accounts in Master_Table that are no longer in dictWanted
+    '    Then we also need to add/update any that are in dictWanted.
+    Dim lrM As Long, rowM As Long
+    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    
+    ' We'll track which accounts in Master_Table belong to relName.
+    ' If they are not in dictWanted, we unassign them.
+    For rowM = 2 To lrM
+        If wsM.Cells(rowM, 7).Value = relName Then
+            acct = Trim(wsM.Cells(rowM, 1).Text)
+            If Not dictWanted.Exists(acct) Then
+                ' The user removed this acct => clear relationship
+                wsM.Cells(rowM, 7).ClearContents  ' Relationship Name
+                wsM.Cells(rowM, 9).ClearContents  ' Next Meeting Date
+                wsM.Cells(rowM, 11).ClearContents ' Frequency
+            End If
+        End If
+    Next rowM
+    
+    ' 3) For each account in dictWanted, we set it in Master_Table
+    '    If the account does not exist in Master_Table, we add a new row for it.
+    Dim foundRow As Long
+    Dim nextMeet As Variant, lastMeet As Variant
+    
+    For Each acct In dictWanted.Keys
+        foundRow = FindAccountRow(wsM, acct)
+        If foundRow = 0 Then
+            ' Not found => add new row at bottom
+            lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+            foundRow = lrM + 1
+            
+            ' Minimal info
+            wsM.Cells(foundRow, 1).NumberFormat = "@"
+            wsM.Cells(foundRow, 1).Value = acct       ' account#
+            wsM.Cells(foundRow, 2).Value = dictWanted(acct) ' name from builder if any
+        End If
+        
+        ' Assign relationship
+        wsM.Cells(foundRow, 7).Value = relName
+        wsM.Cells(foundRow, 11).Value = freq
+        
+        ' Recalc next meeting date
+        lastMeet = wsM.Cells(foundRow, 8).Value
+        If freq > 0 Then
+            If IsDate(lastMeet) Then
+                nextMeet = DateAdd("d", freq, lastMeet)
+            Else
+                nextMeet = DateAdd("d", freq, Date)
+            End If
+            wsM.Cells(foundRow, 9).Value = nextMeet
+        Else
+            wsM.Cells(foundRow, 9).ClearContents
+        End If
+    Next acct
+    
+    MsgBox "Relationship '" & relName & "' saved. Master_Table updated.", vbInformation
 End Sub
 
-'=========================================
-'   HELPER: GetColumnByHeader
-'=========================================
-Private Function GetColumnByHeader(ws As Worksheet, hdrName As String) As Long
+' Finds the row in MASTER_TABLE for a given account# (string).
+' Returns 0 if not found.
+Private Function FindAccountRow(wsM As Worksheet, acctNumber As String) As Long
+    Dim lr As Long, i As Long
+    lr = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lr
+        If Trim(wsM.Cells(i, 1).Text) = acctNumber Then
+            FindAccountRow = i
+            Exit Function
+        End If
+    Next i
+    FindAccountRow = 0
+End Function
+Option Explicit
+
+Public Sub Refresh_Dashboard()
+    Dim wsD As Worksheet, wsM As Worksheet
+    Set wsD = ThisWorkbook.Worksheets(SH_DASHBOARD)
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    
+    ' Clear old data in the relevant ranges
+    wsD.Range("A5:B14").ClearContents  ' Overdue
+    wsD.Range("A18:B27").ClearContents ' Upcoming
+    wsD.Range("A31:B40").ClearContents ' Largest relationships
+    
+    ' 1) Gather Overdue (Next Meeting < Today)
+    Dim overdueItems() As Variant
+    overdueItems = GatherMeetings(wsM, "<", Date, 10) ' top 10
+    
+    ' Write them in A5 downward
+    WriteDashboardList wsD, overdueItems, 5
+    
+    ' 2) Gather Upcoming (Today <= Next < = Today+7)
+    Dim upcomingItems() As Variant
+    upcomingItems = GatherMeetingsRange(wsM, ">=", Date, "<=", Date + 7, 10)
+    
+    ' Write them in A18 downward
+    WriteDashboardList wsD, upcomingItems, 18
+    
+    ' 3) Largest relationships
+    ' Summation by relationship name. Then pick top 5 or 10.
+    Dim largest() As Variant
+    largest = GatherLargestRelationships(wsM, 10)
+    WriteDashboardList wsD, largest, 31
+    
+    MsgBox "Dashboard refreshed!", vbInformation
+End Sub
+
+' Gathers up to 'maxItems' meetings from Master_Table where NextMeeting < / = / > some date
+' We'll store Relationship + NextMeeting in an array, or you can store more columns.
+Private Function GatherMeetings(wsM As Worksheet, compOperator As String, compDate As Date, maxItems As Long) As Variant()
+    Dim lr As Long, i As Long
+    lr = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    
+    Dim results As New Collection
+    Dim nxt As Variant, rel As String
+    
+    For i = 2 To lr
+        nxt = wsM.Cells(i, 9).Value  ' col9 = NextMeeting
+        rel = wsM.Cells(i, 7).Value  ' col7 = Relationship
+        If IsDate(nxt) And rel <> "" Then
+            Select Case compOperator
+                Case "<"
+                    If nxt < compDate Then
+                        results.Add rel & "|" & Format(nxt, "mm/dd/yyyy")
+                    End If
+                Case ">"
+                    If nxt > compDate Then
+                        results.Add rel & "|" & Format(nxt, "mm/dd/yyyy")
+                    End If
+                Case "<="
+                    If nxt <= compDate Then
+                        results.Add rel & "|" & Format(nxt, "mm/dd/yyyy")
+                    End If
+                Case ">="
+                    If nxt >= compDate Then
+                        results.Add rel & "|" & Format(nxt, "mm/dd/yyyy")
+                    End If
+                Case Else
+                    ' do nothing
+            End Select
+        End If
+    Next i
+    
+    ' Convert the collection to an array, maybe we can limit to maxItems
+    Dim arr() As Variant
+    Dim count As Long
+    count = results.Count
+    If count > maxItems Then count = maxItems
+    
+    ReDim arr(1 To count, 1 To 2)
+    
+    Dim idx As Long
+    For idx = 1 To count
+        Dim strData As String
+        strData = results(idx)
+        arr(idx, 1) = Split(strData, "|")(0) ' Relationship
+        arr(idx, 2) = Split(strData, "|")(1) ' NextMeeting
+    Next idx
+    
+    GatherMeetings = arr
+End Function
+
+' Variation: GatherMeetingsRange => NextMeeting must satisfy 2 operators
+Private Function GatherMeetingsRange(wsM As Worksheet, op1 As String, val1 As Date, op2 As String, val2 As Date, maxItems As Long) As Variant()
+    Dim lr As Long, i As Long
+    lr = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    
+    Dim results As New Collection
+    Dim nxt As Variant, rel As String
+    
+    For i = 2 To lr
+        nxt = wsM.Cells(i, 9).Value
+        rel = wsM.Cells(i, 7).Value
+        If IsDate(nxt) And rel <> "" Then
+            If CompareDate(nxt, op1, val1) And CompareDate(nxt, op2, val2) Then
+                results.Add rel & "|" & Format(nxt, "mm/dd/yyyy")
+            End If
+        End If
+    Next i
+    
+    ' convert to array, limit to maxItems
+    Dim arr() As Variant
+    Dim count As Long
+    count = results.Count
+    If count > maxItems Then count = maxItems
+    
+    ReDim arr(1 To count, 1 To 2)
+    Dim idx As Long
+    For idx = 1 To count
+        Dim strData As String
+        strData = results(idx)
+        arr(idx, 1) = Split(strData, "|")(0) ' Relationship
+        arr(idx, 2) = Split(strData, "|")(1) ' NextMeeting
+    Next idx
+    
+    GatherMeetingsRange = arr
+End Function
+
+' CompareDate: simple helper to compare dVal with a date using the operator: <, <=, >, >=
+Private Function CompareDate(dVal As Date, op As String, dComp As Date) As Boolean
+    Select Case op
+        Case "<": CompareDate = (dVal < dComp)
+        Case "<=": CompareDate = (dVal <= dComp)
+        Case ">": CompareDate = (dVal > dComp)
+        Case ">=": CompareDate = (dVal >= dComp)
+        Case Else: CompareDate = False
+    End Select
+End Function
+
+' Summarizes total Market Value (col6) by Relationship (col7) in Master_Table
+' returns an array of top N relationships
+Private Function GatherLargestRelationships(wsM As Worksheet, topN As Long) As Variant()
+    Dim lr As Long, i As Long
+    lr = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+    Dim rel As String, valM As Double
+    
+    For i = 2 To lr
+        rel = wsM.Cells(i, 7).Value
+        If rel <> "" Then
+            valM = wsM.Cells(i, 6).Value ' col6 = total market value
+            If dict.exists(rel) Then
+                dict(rel) = dict(rel) + valM
+            Else
+                dict.Add rel, valM
+            End If
+        End If
+    Next i
+    
+    ' Turn dict into an array of {rel, totalVal}, then sort descending
+    Dim arr() As Variant
+    ReDim arr(1 To dict.Count, 1 To 2)
+    Dim idx As Long: idx = 1
+    Dim k As Variant
+    For Each k In dict.keys
+        arr(idx, 1) = k
+        arr(idx, 2) = dict(k)
+        idx = idx + 1
+    Next k
+    
+    ' Sort arr by col2 descending
+    QuickSort2D arr, 1, dict.Count, 2, False
+    
+    ' Truncate to topN
+    Dim limit As Long: limit = IIf(dict.Count < topN, dict.Count, topN)
+    Dim outArr() As Variant
+    ReDim outArr(1 To limit, 1 To 2)
+    For i = 1 To limit
+        outArr(i, 1) = arr(i, 1)
+        outArr(i, 2) = arr(i, 2)
+    Next i
+    
+    GatherLargestRelationships = outArr
+End Function
+
+' Writes a 2D array of [rowIndex, col1/2] to the dashboard,
+' starting at colA, rowStart in the Dashboard sheet.
+Private Sub WriteDashboardList(wsD As Worksheet, dat() As Variant, rowStart As Long)
+    If Not Not dat = Nothing Then
+        Dim ub As Long
+        ub = UBound(dat, 1)
+        Dim i As Long
+        For i = 1 To ub
+            wsD.Cells(rowStart + i - 1, 1).Value = dat(i, 1)
+            wsD.Cells(rowStart + i - 1, 2).Value = dat(i, 2)
+        Next i
+    End If
+End Sub
+' QuickSort2D array on a specified column. ascending or descending
+Private Sub QuickSort2D(arr As Variant, ByVal first As Long, ByVal last As Long, ByVal sortCol As Long, ByVal ascending As Boolean)
+   Dim pivot As Variant, temp1 As Variant, temp2 As Variant
+   Dim f As Long, l As Long
+   
+   f = first
+   l = last
+   pivot = arr((first + last) \ 2, sortCol)
+   
+   Do While f <= l
+      If ascending Then
+         Do While arr(f, sortCol) < pivot: f = f + 1: Loop
+         Do While arr(l, sortCol) > pivot: l = l - 1: Loop
+      Else
+         Do While arr(f, sortCol) > pivot: f = f + 1: Loop
+         Do While arr(l, sortCol) < pivot: l = l - 1: Loop
+      End If
+      
+      If f <= l Then
+         ' swap entire row f and l
+         Dim c As Long
+         For c = LBound(arr, 2) To UBound(arr, 2)
+             temp1 = arr(f, c)
+             arr(f, c) = arr(l, c)
+             arr(l, c) = temp1
+         Next c
+         f = f + 1
+         l = l - 1
+      End If
+   Loop
+   
+   If first < l Then QuickSort2D arr, first, l, sortCol, ascending
+   If f < last Then QuickSort2D arr, f, last, sortCol, ascending
+End Sub
+Option Explicit
+
+' ========================================
+'  GetColumnByHeader
+' ========================================
+Public Function GetColumnByHeader(ws As Worksheet, hdrName As String) As Long
     Dim rngFound As Range
     Set rngFound = ws.Rows(1).Find(What:=hdrName, LookIn:=xlValues, LookAt:=xlWhole)
     If rngFound Is Nothing Then
@@ -356,14 +583,42 @@ Private Function GetColumnByHeader(ws As Worksheet, hdrName As String) As Long
     End If
 End Function
 
-'=========================================
-'   HELPER: RemoveDuplicates
-'   Removes duplicates based on colIndex,
-'   with the first row as header.
-'=========================================
-Private Sub RemoveDuplicates(ws As Worksheet, colIndex As Long)
+' ========================================
+'  RemoveDuplicates
+' ========================================
+Public Sub RemoveDuplicates(ws As Worksheet, colIndex As Long)
     Dim lr As Long
     lr = ws.Cells(ws.Rows.Count, colIndex).End(xlUp).Row
     If lr < 2 Then Exit Sub
+    
     ws.Range("A1").CurrentRegion.RemoveDuplicates Columns:=colIndex, Header:=xlYes
+End Sub
+
+' ========================================
+'  ApplyCalendarConditionalFormatting
+' ========================================
+Public Sub ApplyCalendarConditionalFormatting(ws As Worksheet, lastDataRow As Long)
+    If lastDataRow < 2 Then Exit Sub
+    
+    Dim rngDates As Range
+    ' Suppose NextMeeting is in col E => col5
+    ' Adjust if needed for your layout
+    Set rngDates = ws.Range("E2:E" & lastDataRow)
+    
+    rngDates.FormatConditions.Delete
+    
+    ' Overdue < Today => Red
+    With rngDates.FormatConditions.Add(Type:=xlCellValue, Operator:=xlLess, Formula1:="=TODAY()")
+        .Interior.Color = RGB(255, 0, 0)
+    End With
+    
+    ' Upcoming => between Today and Today+7 => Orange
+    With rngDates.FormatConditions.Add(Type:=xlExpression, Formula1:="=AND(E2>=TODAY(),E2<=TODAY()+7)")
+        .Interior.Color = RGB(255, 165, 0)
+    End With
+    
+    ' Future => beyond Today+7 => Green
+    With rngDates.FormatConditions.Add(Type:=xlExpression, Formula1:="=E2>TODAY()+7")
+        .Interior.Color = RGB(0, 255, 0)
+    End With
 End Sub
