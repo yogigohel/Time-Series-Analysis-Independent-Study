@@ -1,0 +1,383 @@
+'=============== modSchedules ===============
+Option Explicit
+
+Private Function ValidateAllColumns() As Boolean
+    ' Centralized validation function to check all table schemas before processing.
+    ' Returns True if all columns are found, False otherwise.
+    On Error GoTo Hell
+    Dim ws As Worksheet, lo As ListObject
+    Dim missingCols As String, tblName As String, sheetName As String
+    Dim cols As Variant, col As Variant
+
+    ' --- Define required columns for each table ---
+    Dim requiredColsInput As Variant
+    requiredColsInput = Array(COL_ACCOUNT, COL_ACCT_NAME, COL_MASTER_ID, COL_MASTER_NAME, COL_DATE_LAST_TRADED, COL_IPS_DATE, COL_INV_SOLUTION)
+    
+    Dim requiredColsGroups As Variant
+    requiredColsGroups = Array(COL_GROUP_ID, COL_GROUP_NAME, COL_TRADE_INT, COL_MEET_INT, COL_GROUP_TYPE, COL_MEMBER_ACCTS)
+    
+    Dim requiredColsOverrides As Variant
+    requiredColsOverrides = Array(COL_ACCOUNT, COL_GROUP_ID, COL_OVERRIDE_LAST_TRADED, COL_OVERRIDE_IPS_DATE)
+    
+    Dim requiredColsSchedules As Variant
+    requiredColsSchedules = Array(COL_ACCOUNT, COL_ACCT_NAME, COL_GROUP_ID, COL_GROUP_NAME, COL_MASTER_ID, COL_MASTER_NAME, COL_EFF_LAST_TRADED, COL_EFF_IPS_REAFFIRM, COL_NEXT_TRADE, COL_NEXT_MEET)
+
+    ' --- Perform checks ---
+    If Not CheckTableColumns(SHEET_INPUT, TBL_INPUT, requiredColsInput) Then Exit Function
+    If Not CheckTableColumns(SHEET_GROUPS, TBL_GROUPS, requiredColsGroups) Then Exit Function
+    If Not CheckTableColumns(SHEET_OVERRIDES, TBL_OVERRIDES, requiredColsOverrides) Then Exit Function
+    If Not CheckTableColumns(SHEET_SCHEDULES, TBL_SCHEDULES, requiredColsSchedules) Then Exit Function
+    
+    ValidateAllColumns = True
+    Exit Function
+Hell:
+    ValidateAllColumns = False
+End Function
+
+Private Function CheckTableColumns(sheetName As String, tblName As String, cols As Variant) As Boolean
+    ' Helper function for ValidateAllColumns. Checks one table.
+    On Error GoTo Hell
+    Dim ws As Worksheet, lo As ListObject
+    Dim missingCols As String, col As Variant
+    
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    Set lo = ws.ListObjects(tblName)
+    
+    For Each col In cols
+        On Error Resume Next
+        Dim colIndex As Long
+        colIndex = lo.ListColumns(col).Index
+        If Err.Number <> 0 Then
+            missingCols = missingCols & vbCrLf & " - " & col
+            Err.Clear
+        End If
+        On Error GoTo Hell
+    Next col
+    
+    If Len(missingCols) > 0 Then
+        MsgBox "Validation Error:" & vbCrLf & "Table '" & tblName & "' on sheet '" & sheetName & "' is missing required columns:" & missingCols, vbCritical
+        GoTo Hell
+    End If
+    
+    CheckTableColumns = True
+    Exit Function
+Hell:
+    CheckTableColumns = False
+End Function
+
+
+Public Sub RefreshSchedules()
+    '--- CORRECTED DECLARATION ---
+    Dim loIn As ListObject, loGrp As ListObject, loOvr As ListObject, loOut As ListObject
+    Dim dictAcctOvr As Object, dictGrpOvr As Object, dictCust As Object, dictTradeInt As Object, dictMeetInt As Object, dictGroupNames As Object
+    Dim dictGroupMaxTradeDate As Object ' *** NEW: To track max trade dates for groups
+    Dim r As ListRow, rInput As ListRow, newSchedRow As ListRow, rOvr As ListRow
+    Dim acct As String, grpID As Variant, masterIDVal As String, groupNameVal As String ' *** MODIFIED: grpID is now Variant
+    Dim effTrade As Variant, effMeet As Variant
+    Dim nextTrade As Variant, nextMeet As Variant
+    Dim baseTradeDateAsDateValue As Date, baseMeetDateAsDateValue As Date
+    Dim memStr As String, memArr As Variant, i As Long
+    Dim schedAccountCell As Range
+    Dim skipAllOverridePrompts As Boolean
+    Dim overrideTradeDate As Variant, inputTradeDate As Variant, currentMaxDate As Variant
+    Dim response As VbMsgBoxResult
+    Dim tradeInterval As Variant, meetInterval As Variant
+    Dim invSolution As String
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    Application.DisplayAlerts = False
+
+    On Error GoTo ErrorHandler_Schedules
+    
+    '--- NEW: Validate all table structures before proceeding ---
+    If Not ValidateAllColumns() Then GoTo CleanExit_Schedules
+    
+    Debug.Print "--- RefreshSchedules Started (" & Now & ") ---"
+
+    Set loIn = ThisWorkbook.Worksheets(SHEET_INPUT).ListObjects(TBL_INPUT)
+    Set loGrp = ThisWorkbook.Worksheets(SHEET_GROUPS).ListObjects(TBL_GROUPS)
+    Set loOvr = ThisWorkbook.Worksheets(SHEET_OVERRIDES).ListObjects(TBL_OVERRIDES)
+    Set loOut = ThisWorkbook.Worksheets(SHEET_SCHEDULES).ListObjects(TBL_SCHEDULES)
+
+    ' Dictionaries for overrides
+    Set dictAcctOvr = CreateObject("Scripting.Dictionary")
+    Set dictGrpOvr = CreateObject("Scripting.Dictionary")
+    skipAllOverridePrompts = False
+
+    For Each rOvr In loOvr.ListRows
+        acct = Nz(rOvr.Range(loOvr.ListColumns(COL_ACCOUNT).Index).Value)
+        grpID = Nz(rOvr.Range(loOvr.ListColumns(COL_GROUP_ID).Index).Value)
+        
+        If acct <> "" Then
+            If Not dictAcctOvr.Exists(acct) Then
+                dictAcctOvr.Add acct, Array(SafeDate(rOvr.Range(loOvr.ListColumns(COL_OVERRIDE_LAST_TRADED).Index).Value), SafeDate(rOvr.Range(loOvr.ListColumns(COL_OVERRIDE_IPS_DATE).Index).Value))
+            End If
+        ElseIf grpID <> "" Then
+            If Not dictGrpOvr.Exists(grpID) Then
+                dictGrpOvr.Add grpID, Array(SafeDate(rOvr.Range(loOvr.ListColumns(COL_OVERRIDE_LAST_TRADED).Index).Value), SafeDate(rOvr.Range(loOvr.ListColumns(COL_OVERRIDE_IPS_DATE).Index).Value))
+            End If
+        End If
+    Next rOvr
+
+    ' Dictionaries for group properties
+    Set dictCust = CreateObject("Scripting.Dictionary")
+    Set dictTradeInt = CreateObject("Scripting.Dictionary")
+    Set dictMeetInt = CreateObject("Scripting.Dictionary")
+    Set dictGroupNames = CreateObject("Scripting.Dictionary")
+    Set dictGroupMaxTradeDate = CreateObject("Scripting.Dictionary") ' *** NEW
+    
+    ' Load group definitions
+    For Each r In loGrp.ListRows
+        grpID = Nz(r.Range(loGrp.ListColumns(COL_GROUP_ID).Index).Value)
+        If grpID <> "" Then
+            dictTradeInt(grpID) = r.Range(loGrp.ListColumns(COL_TRADE_INT).Index).Value
+            dictMeetInt(grpID) = r.Range(loGrp.ListColumns(COL_MEET_INT).Index).Value
+            dictGroupNames(grpID) = Nz(r.Range(loGrp.ListColumns(COL_GROUP_NAME).Index).Value)
+
+            If Nz(r.Range(loGrp.ListColumns(COL_GROUP_TYPE).Index).Value) = "Custom" Then
+                memStr = Nz(r.Range(loGrp.ListColumns(COL_MEMBER_ACCTS).Index).Value)
+                If memStr <> "" Then
+                    memArr = Split(memStr, ",")
+                    For i = LBound(memArr) To UBound(memArr)
+                        acct = Trim(memArr(i))
+                        If acct <> "" Then
+                           dictCust(acct) = grpID
+                        End If
+                    Next i
+                End If
+            End If
+        End If
+    Next r
+
+    ' *** NEW: Pre-scan input to find the latest trade date for each group for stale override check
+    For Each rInput In loIn.ListRows
+        acct = Nz(rInput.Range(loIn.ListColumns(COL_ACCOUNT).Index).Value)
+        masterIDVal = Nz(rInput.Range(loIn.ListColumns(COL_MASTER_ID).Index).Value)
+        
+        If dictCust.Exists(acct) Then
+            grpID = dictCust(acct)
+        Else
+            grpID = masterIDVal
+        End If
+        
+        inputTradeDate = SafeDate(rInput.Range(loIn.ListColumns(COL_DATE_LAST_TRADED).Index).Value)
+        
+        If IsDate(inputTradeDate) Then
+            If dictGroupMaxTradeDate.Exists(grpID) Then
+                currentMaxDate = dictGroupMaxTradeDate(grpID)
+                If CDate(inputTradeDate) > CDate(currentMaxDate) Then
+                    dictGroupMaxTradeDate(grpID) = inputTradeDate
+                End If
+            Else
+                dictGroupMaxTradeDate.Add grpID, inputTradeDate
+            End If
+        End If
+    Next rInput
+
+    ' *** NEW: Stale override check for GROUP overrides
+    If Not skipAllOverridePrompts Then
+        For Each grpID In dictGrpOvr.Keys
+            If dictGroupMaxTradeDate.Exists(grpID) Then
+                overrideTradeDate = dictGrpOvr(grpID)(0)
+                inputTradeDate = dictGroupMaxTradeDate(grpID) ' This is the max date for the group
+                
+                If IsDate(inputTradeDate) And IsDate(overrideTradeDate) Then
+                    If CDate(inputTradeDate) > CDate(overrideTradeDate) Then
+                        response = MsgBox("Input data for group '" & grpID & "' has a newer trade date (" & Format(inputTradeDate, "yyyy-mm-dd") & ") " & _
+                                          "than the group override (" & Format(overrideTradeDate, "yyyy-mm-dd") & ")." & vbCrLf & vbCrLf & _
+                                          "Do you want to remove this specific group override?", vbYesNoCancel, "Stale Group Override Found")
+                        If response = vbYes Then
+                            For Each rOvr In loOvr.ListRows
+                                If Nz(rOvr.Range(loOvr.ListColumns(COL_GROUP_ID).Index).Value) = grpID Then
+                                    rOvr.Delete
+                                    dictGrpOvr.Remove grpID
+                                    Exit For
+                                End If
+                            Next rOvr
+                        ElseIf response = vbCancel Then
+                            skipAllOverridePrompts = True
+                            Exit For ' Exit the loop over dictGrpOvr.Keys
+                        End If
+                    End If
+                End If
+            End If
+        Next grpID
+    End If
+
+    ' Clear existing schedule data
+    If Not loOut.DataBodyRange Is Nothing Then
+        loOut.DataBodyRange.Delete
+    End If
+
+    ' Main loop to build schedules
+    For Each rInput In loIn.ListRows
+        ' *** MODIFIED: Added filter for DESKTOP MANAGED
+        invSolution = Nz(rInput.Range(loIn.ListColumns(COL_INV_SOLUTION).Index).Value)
+        If invSolution = "DESKTOP MANAGED" Then
+            acct = Nz(rInput.Range(loIn.ListColumns(COL_ACCOUNT).Index).Value)
+            masterIDVal = Nz(rInput.Range(loIn.ListColumns(COL_MASTER_ID).Index).Value)
+            
+            If dictCust.Exists(acct) Then
+                grpID = dictCust(acct)
+            Else
+                grpID = masterIDVal
+            End If
+            
+            If dictGroupNames.Exists(grpID) Then
+                groupNameVal = Nz(dictGroupNames(grpID))
+            Else
+                groupNameVal = ""
+            End If
+
+            ' --- Determine effective trade date with correct precedence ---
+            inputTradeDate = SafeDate(rInput.Range(loIn.ListColumns(COL_DATE_LAST_TRADED).Index).Value)
+            If dictAcctOvr.Exists(acct) Then
+                overrideTradeDate = dictAcctOvr(acct)(0)
+                ' Stale override check for ACCOUNT overrides (existing logic)
+                If Not skipAllOverridePrompts And IsDate(inputTradeDate) And IsDate(overrideTradeDate) Then
+                    If CDate(inputTradeDate) > CDate(overrideTradeDate) Then
+                        response = MsgBox("Input data for account '" & acct & "' has a newer trade date (" & Format(inputTradeDate, "yyyy-mm-dd") & ") " & _
+                                          "than the override (" & Format(overrideTradeDate, "yyyy-mm-dd") & ")." & vbCrLf & vbCrLf & _
+                                          "Do you want to remove this specific override?", vbYesNoCancel, "Stale Override Found")
+                        If response = vbYes Then
+                            For Each rOvr In loOvr.ListRows
+                                If Nz(rOvr.Range(loOvr.ListColumns(COL_ACCOUNT).Index).Value) = acct Then
+                                    rOvr.Delete
+                                    dictAcctOvr.Remove acct
+                                    overrideTradeDate = Empty
+                                    Exit For
+                                End If
+                            Next rOvr
+                        ElseIf response = vbCancel Then
+                            skipAllOverridePrompts = True
+                        End If
+                    End If
+                End If
+                effTrade = overrideTradeDate
+            ElseIf dictGrpOvr.Exists(grpID) Then
+                effTrade = dictGrpOvr(grpID)(0)
+            Else
+                effTrade = inputTradeDate
+            End If
+            
+            ' --- Determine effective meeting date with correct precedence ---
+            If dictAcctOvr.Exists(acct) Then
+                effMeet = dictAcctOvr(acct)(1)
+            ElseIf dictGrpOvr.Exists(grpID) Then
+                effMeet = dictGrpOvr(grpID)(1)
+            Else
+                effMeet = SafeDate(rInput.Range(loIn.ListColumns(COL_IPS_DATE).Index).Value)
+            End If
+
+            ' --- Calculate next dates safely ---
+            nextTrade = Empty
+            nextMeet = Empty
+            
+            ' This check is now redundant due to the outer If, but harmless to keep for clarity
+            If invSolution = "DESKTOP MANAGED" Then
+                If IsDate(effTrade) Then
+                    If dictTradeInt.Exists(grpID) Then
+                        tradeInterval = dictTradeInt(grpID)
+                        If IsNumeric(tradeInterval) Then
+                            If CLng(tradeInterval) > 0 Then
+                                baseTradeDateAsDateValue = DateValue(effTrade)
+                                nextTrade = DateAdd("d", CLng(tradeInterval), baseTradeDateAsDateValue)
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+
+            If IsDate(effMeet) Then
+                If dictMeetInt.Exists(grpID) Then
+                    meetInterval = dictMeetInt(grpID)
+                    If IsNumeric(meetInterval) Then
+                        If CLng(meetInterval) > 0 Then
+                            baseMeetDateAsDateValue = DateValue(effMeet)
+                            nextMeet = DateAdd("d", CLng(meetInterval), baseMeetDateAsDateValue)
+                        End If
+                    End If
+                End If
+            End If
+
+            ' --- Write to output table ---
+            Set newSchedRow = loOut.ListRows.Add(AlwaysInsert:=True)
+            With newSchedRow
+                ' --- CORRECTED: Using proper constants for tbl_Schedules ---
+                Set schedAccountCell = .Range(loOut.ListColumns(COL_ACCOUNT).Index)
+                schedAccountCell.NumberFormat = "@"
+                schedAccountCell.Value = acct
+                
+                .Range(loOut.ListColumns(COL_ACCT_NAME).Index).Value = rInput.Range(loIn.ListColumns(COL_ACCT_NAME).Index).Value
+                .Range(loOut.ListColumns(COL_GROUP_ID).Index).Value = grpID
+                .Range(loOut.ListColumns(COL_GROUP_NAME).Index).Value = groupNameVal
+                .Range(loOut.ListColumns(COL_MASTER_ID).Index).NumberFormat = "@"
+                .Range(loOut.ListColumns(COL_MASTER_ID).Index).Value = masterIDVal
+                .Range(loOut.ListColumns(COL_MASTER_NAME).Index).Value = rInput.Range(loIn.ListColumns(COL_MASTER_NAME).Index).Value
+                .Range(loOut.ListColumns(COL_EFF_LAST_TRADED).Index).Value = IIf(IsDate(effTrade), effTrade, vbNullString)
+                .Range(loOut.ListColumns(COL_EFF_IPS_REAFFIRM).Index).Value = IIf(IsDate(effMeet), effMeet, vbNullString)
+                .Range(loOut.ListColumns(COL_NEXT_TRADE).Index).Value = IIf(IsDate(nextTrade), nextTrade, vbNullString)
+                .Range(loOut.ListColumns(COL_NEXT_MEET).Index).Value = IIf(IsDate(nextMeet), nextMeet, vbNullString)
+            End With
+        End If ' End of "DESKTOP MANAGED" check
+    Next rInput
+
+    If loOut.ListRows.Count > 0 Then
+        loOut.Sort.SortFields.Clear
+        loOut.Sort.SortFields.Add2 key:=loOut.ListColumns(COL_GROUP_ID).Range, SortOn:=xlSortOnValues, Order:=xlAscending
+        loOut.Sort.SortFields.Add2 key:=loOut.ListColumns(COL_ACCOUNT).Range, SortOn:=xlSortOnValues, Order:=xlAscending
+        loOut.Sort.Apply
+    End If
+
+    Debug.Print "--- RefreshSchedules Ended (" & Now & ") ---"
+
+CleanExit_Schedules:
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.DisplayAlerts = True
+    Set loIn = Nothing
+    Set loGrp = Nothing
+    Set loOvr = Nothing
+    Set loOut = Nothing
+    Set dictAcctOvr = Nothing
+    Set dictGrpOvr = Nothing
+    Set dictCust = Nothing
+    Set dictTradeInt = Nothing
+    Set dictMeetInt = Nothing
+    Set dictGroupNames = Nothing
+    Set dictGroupMaxTradeDate = Nothing ' *** NEW: Clean up
+    Exit Sub
+
+ErrorHandler_Schedules:
+    MsgBox "An error occurred in RefreshSchedules: " & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit_Schedules
+End Sub
+
+' Helper function to safely convert values to dates, returning Empty if invalid.
+Private Function SafeDate(v As Variant) As Variant
+    On Error Resume Next
+    SafeDate = Empty
+    If IsNumeric(v) Then
+        If CDbl(v) > 0 Then
+            SafeDate = CDate(CDbl(v))
+            If Err.Number <> 0 Then SafeDate = Empty
+        End If
+    ElseIf IsDate(v) Then
+        SafeDate = CDate(v)
+    End If
+    On Error GoTo 0
+End Function
+
+' Helper function to handle Null/Empty values, returning a default.
+Private Function Nz(v As Variant, Optional defaultVal As Variant = "") As Variant
+    If IsNull(v) Or IsEmpty(v) Or v = "" Then
+        Nz = defaultVal
+    Else
+        Nz = v
+    End If
+End Function
+
+
