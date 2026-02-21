@@ -1,0 +1,471 @@
+Option Explicit
+
+# Persona
+You are a **Senior Trust Officer at a top-tier private bank** (e.g., BNY Mellon, Northern Trust, JPMorgan Private Bank).
+You have 20+ years of experience administering complex trusts, navigating fiduciary duties, managing sensitive beneficiary relationships, and working closely with trust counsel, investment committees, and relationship managers.
+You are precise, conservative, and risk-aware, with a deep understanding of trust law, discretionary standards, and family dynamics.
+
+# Task
+Analyze trust-related scenarios, documents, or beneficiary communications to:
+1. Identify the **key fiduciary, legal, and relational issues** at play.
+2. Extract and interpret **explicit and implicit beneficiary requests**.
+3. Assess whether requests are **permitted, restricted, or discretionary** under the governing trust terms.
+4. Highlight **risk factors, conflicts, and escalation points**.
+5. Propose **appropriate trust officer responses or next steps**.
+
+# Context
+You will be provided with one or more of the following:
+- Trust excerpts (distribution standards, powers, restrictions)
+- Beneficiary emails, letters, or meeting notes
+- Family relationship descriptions
+- Historical trust actions or precedent
+- Trustee or advisor concerns
+
+Assume:
+- The trustee has fiduciary duties of loyalty, prudence, impartiality, and good faith.
+- Ambiguity must be handled conservatively and documented.
+- Beneficiary relationships are long-term and reputationally sensitive.
+- Legal interpretation must be distinguished from relationship management judgment.
+
+# Constraints
+- Do **not** provide legal advice; frame analysis as fiduciary and administrative assessment.
+- Clearly separate **facts**, **interpretation**, and **recommendations**.
+- Flag uncertainty explicitly and suggest when legal counsel should be consulted.
+- Maintain a professional, neutral, and institutionally appropriate tone.
+- Avoid speculative judgments about intent unless supported by evidence.
+
+# Output Format
+Structure your response exactly as follows:
+
+## 1. Situation Summary
+Concise factual overview of the trust context and the beneficiary request.
+
+## 2. Governing Trust Framework
+- Relevant trust provisions
+- Applicable distribution standards
+- Trustee discretion vs. mandatory actions
+
+## 3. Beneficiary Request Analysis
+- Explicit requests
+- Implied or underlying objectives
+- Consistency with trust terms
+
+## 4. Risk & Sensitivity Assessment
+- Fiduciary risk
+- Precedent-setting risk
+- Family dynamics or conflict risk
+- Reputational or litigation exposure
+
+## 5. Trustee Considerations
+- What the trustee must consider
+- What the trustee must avoid
+- Documentation requirements
+
+## 6. Recommended Trustee Response
+- Suggested approach or communication posture
+- Possible approvals, denials, or conditional actions
+- When to escalate to legal, tax, or committee review
+
+## 7. Open Questions / Missing Information
+List any facts or documents needed before final action.
+
+# Final Instruction
+Analyze the provided trust scenario **as a senior trust officer would**, prioritizing fiduciary integrity, risk management, and long-term beneficiary relationships. Be conservative, structured, and explicit in your reasoning.
+
+'==============================================================================
+' PM Scheduling Tool Module
+'
+' This module implements:
+'  1. Data import from "Data_Upload" into "Master_Table"
+'  2. Refreshing the Meeting Calendar from "Master_Table"
+'  3. Relationship Builder functions:
+'       - LoadOrCreateRelationship: Loads the list of accounts already assigned
+'         to a relationship (from Master_Table) into the Relationship_Builder sheet.
+'       - SaveRelationship: Updates Master_Table for each account listed in the
+'         Relationship_Builder sheet by:
+'             • Assigning the relationship name (from cell B2)
+'             • Setting the meeting frequency (from cell B3)
+'             • Calculating the Next Meeting Date based on:
+'                 If Meeting Frequency > 0 Then
+'                     If Last Meeting Date exists (col 8) Then Next Meeting = Last Meeting + Frequency
+'                     Else Next Meeting = Today + Frequency
+'             • Removing the relationship assignment from any accounts that no longer
+'               appear in the builder.
+'
+' Assumptions:
+'   - "Data_Upload" sheet contains raw data with headers:
+'         "Account#", "Acct Name", "Master Account ID", "Master Account Name",
+'         "Investment Solution Desc", "Total Market Value"
+'   - "Master_Table" layout is as described above.
+'   - "Relationship_Builder" sheet:
+'         Cell B2: Relationship Name
+'         Cell B3: Meeting Frequency (Days)
+'         Row 5: Headers (e.g., "Account#", "Account Name")
+'         Row 6 onward: List of account numbers (text format)
+'   - "Meeting_Calendar" displays selected columns from Master_Table.
+'==============================================================================
+ 
+'=========================
+' Sheet Name Constants
+'=========================
+Public Const SH_DATA_UPLOAD As String = "Data_Upload"
+Public Const SH_MASTER_TABLE As String = "Master_Table"
+Public Const SH_RELATIONSHIP_BUILDER As String = "Relationship_Builder"
+Public Const SH_MEETING_CALENDAR As String = "Meeting_Calendar"
+ 
+'===================================
+' Headers for Data_Upload (exact strings)
+'===================================
+Public Const HDR_ACCOUNT_NUM As String = "Account#"
+Public Const HDR_ACCT_NAME As String = "Acct Name"
+Public Const HDR_MASTER_ACCT_ID As String = "Master Account ID"
+Public Const HDR_MASTER_ACCT_NAME As String = "Master Account Name"
+Public Const HDR_INVEST_DESC As String = "Investment Solution Desc"
+Public Const HDR_TOTAL_VALUE As String = "Total Market Value"
+ 
+'==============================================================================
+' 1) Data Import: Upload & Process Data from Data_Upload into Master_Table
+'==============================================================================
+Public Sub Upload_And_Process_Data()
+    Dim wsUp As Worksheet, wsM As Worksheet
+    Dim lastRowUp As Long, rowUp As Long, nextRowM As Long
+    Dim colAcct As Long, colName As Long, colMastID As Long, colMastName As Long
+    Dim colInvDesc As Long, colVal As Long
+    Dim acctText As String
+    
+    Set wsUp = ThisWorkbook.Worksheets(SH_DATA_UPLOAD)
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    
+    ' Find last row in Data_Upload
+    lastRowUp = wsUp.Cells(wsUp.Rows.Count, 1).End(xlUp).Row
+    If lastRowUp < 2 Then
+        MsgBox "No data in 'Data_Upload'!", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Identify columns in Data_Upload by header name
+    colAcct = GetColumnByHeader(wsUp, HDR_ACCOUNT_NUM)
+    colName = GetColumnByHeader(wsUp, HDR_ACCT_NAME)
+    colMastID = GetColumnByHeader(wsUp, HDR_MASTER_ACCT_ID)
+    colMastName = GetColumnByHeader(wsUp, HDR_MASTER_ACCT_NAME)
+    colInvDesc = GetColumnByHeader(wsUp, HDR_INVEST_DESC)
+    colVal = GetColumnByHeader(wsUp, HDR_TOTAL_VALUE)
+    
+    If colAcct = 0 Or colName = 0 Or colMastID = 0 Or colMastName = 0 Or colInvDesc = 0 Or colVal = 0 Then
+        MsgBox "One or more required headers not found in Data_Upload!", vbCritical
+        Exit Sub
+    End If
+    
+    ' Clear old data in Master_Table (except header row)
+    wsM.Rows("2:" & wsM.Rows.Count).ClearContents
+    nextRowM = 2
+    
+    ' Copy each row from Data_Upload to Master_Table
+    For rowUp = 2 To lastRowUp
+        If Application.CountA(wsUp.Rows(rowUp)) > 0 Then
+            ' Preserve leading zeros by reading cell.Text and forcing text format
+            acctText = wsUp.Cells(rowUp, colAcct).Text
+            
+            With wsM
+                .Cells(nextRowM, 1).NumberFormat = "@" ' Account# as text
+                .Cells(nextRowM, 1).Value = acctText
+                .Cells(nextRowM, 2).Value = wsUp.Cells(rowUp, colName).Value
+                .Cells(nextRowM, 3).NumberFormat = "@" ' Master Account ID as text
+                .Cells(nextRowM, 3).Value = wsUp.Cells(rowUp, colMastID).Text
+                .Cells(nextRowM, 4).Value = wsUp.Cells(rowUp, colMastName).Value
+                .Cells(nextRowM, 5).Value = wsUp.Cells(rowUp, colInvDesc).Value
+                .Cells(nextRowM, 6).Value = wsUp.Cells(rowUp, colVal).Value
+                ' Columns 7 (Relationship), 8 (Last Meeting), 9 (Next Meeting),
+                ' 10 (Meeting Notes) and 11 (Frequency) remain blank (or retain previous info)
+            End With
+            
+            nextRowM = nextRowM + 1
+        End If
+    Next rowUp
+    
+    ' Optionally remove duplicates based on Account# (column 1)
+    RemoveDuplicates wsM, 1
+    
+    MsgBox "Data imported to Master_Table successfully.", vbInformation
+End Sub
+ 
+'==============================================================================
+' 2) Refresh Meeting Calendar: Copy selected columns from Master_Table
+'==============================================================================
+Public Sub Refresh_Meeting_Calendar()
+    Dim wsCal As Worksheet, wsM As Worksheet
+    Dim lrM As Long, rowDest As Long, i As Long
+    
+    Set wsCal = ThisWorkbook.Worksheets(SH_MEETING_CALENDAR)
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    
+    ' Clear existing calendar data (except headers)
+    wsCal.Rows("2:" & wsCal.Rows.Count).ClearContents
+    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    rowDest = 2
+    
+    For i = 2 To lrM
+        If Application.CountA(wsM.Rows(i)) > 0 Then
+            ' Example: Calendar Columns:
+            '   A: Relationship Name (Master col 7)
+            '   B: Account#         (Master col 1)
+            '   C: Acct Name        (Master col 2)
+            '   D: Last Meeting Date (Master col 8)
+            '   E: Next Meeting Date (Master col 9)
+            '   F: Meeting Notes    (Master col 10)
+            wsCal.Cells(rowDest, 1).Value = wsM.Cells(i, 7).Value
+            wsCal.Cells(rowDest, 2).NumberFormat = "@" ' Ensure text format for Account#
+            wsCal.Cells(rowDest, 2).Value = wsM.Cells(i, 1).Text
+            wsCal.Cells(rowDest, 3).Value = wsM.Cells(i, 2).Value
+            wsCal.Cells(rowDest, 4).Value = wsM.Cells(i, 8).Value
+            wsCal.Cells(rowDest, 5).Value = wsM.Cells(i, 9).Value
+            wsCal.Cells(rowDest, 6).Value = wsM.Cells(i, 10).Value
+            rowDest = rowDest + 1
+        End If
+    Next i
+    
+    ' Apply conditional formatting to Next Meeting Date column (if desired)
+    ApplyCalendarConditionalFormatting wsCal, rowDest - 1
+    
+    MsgBox "Meeting Calendar refreshed!", vbInformation
+End Sub
+ 
+'==============================================================================
+' 3a) LoadOrCreateRelationship: Load existing accounts from Master_Table
+'     into the Relationship_Builder sheet for a given relationship.
+'==============================================================================
+Public Sub LoadOrCreateRelationship()
+    Dim wsB As Worksheet, wsM As Worksheet
+    Dim relName As String, rowDest As Long, i As Long
+    Dim lrM As Long
+    Dim freqCollected As Collection
+    Dim relFreq As Variant
+    
+    Set wsB = ThisWorkbook.Worksheets(SH_RELATIONSHIP_BUILDER)
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    
+    ' Get the Relationship Name from cell B2 in Relationship_Builder.
+    relName = Trim(wsB.Range("B2").Value)
+    If relName = "" Then
+        MsgBox "Please enter a Relationship Name in cell B2.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Clear existing account list (from row 6 downward)
+    wsB.Rows("6:" & wsB.Rows.Count).ClearContents
+    rowDest = 6
+    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    Set freqCollected = New Collection
+    
+    ' Loop through Master_Table and load accounts matching the relationship.
+    For i = 2 To lrM
+        If Trim(wsM.Cells(i, 7).Value) = relName Then
+            ' Populate Relationship_Builder with Account# and Acct Name.
+            wsB.Cells(rowDest, 1).NumberFormat = "@" ' Preserve leading zeros
+            wsB.Cells(rowDest, 1).Value = wsM.Cells(i, 1).Text
+            wsB.Cells(rowDest, 2).Value = wsM.Cells(i, 2).Value
+            rowDest = rowDest + 1
+            ' Collect meeting frequency if available (from Master_Table col 11)
+            relFreq = wsM.Cells(i, 11).Value
+            If IsNumeric(relFreq) And relFreq > 0 Then
+                On Error Resume Next
+                freqCollected.Add relFreq, CStr(relFreq) ' avoid duplicates
+                On Error GoTo 0
+            End If
+        End If
+    Next i
+    
+    ' If any frequency was found, set cell B3 in the builder (choose first value)
+    If freqCollected.Count > 0 Then
+        wsB.Range("B3").Value = freqCollected.Item(1)
+    Else
+        wsB.Range("B3").ClearContents
+    End If
+    
+    MsgBox "Load complete. Accounts for relationship '" & relName & "' are loaded.", vbInformation
+End Sub
+ 
+'==============================================================================
+' 3b) SaveRelationship: Update Master_Table based on Relationship_Builder entries.
+'
+' For each account listed in Relationship_Builder (from row 6 onward):
+'   - Update the Master_Table row (if found) to assign the relationship (from B2)
+'     and set the meeting frequency (from B3).
+'   - Calculate Next Meeting Date as follows:
+'         If Meeting Frequency > 0 Then
+'             If Last Meeting Date (col 8) is a valid date, then:
+'                 Next Meeting = Last Meeting Date + Frequency
+'             Else:
+'                 Next Meeting = Today + Frequency
+'
+' Also, for any account in Master_Table that is currently assigned to this
+' relationship but is NOT listed in the builder, clear its relationship,
+' meeting frequency, and next meeting date.
+'==============================================================================
+Public Sub SaveRelationship()
+    Dim wsB As Worksheet, wsM As Worksheet
+    Dim relName As String, freq As Variant
+    Dim lastRowBuilder As Long, builderRow As Long
+    Dim acctNum As String, foundRow As Long
+    Dim lrM As Long, i As Long
+    Dim lastMeet As Variant, nextMeet As Variant
+    Dim dictBuilder As Object
+    
+    Set wsB = ThisWorkbook.Worksheets(SH_RELATIONSHIP_BUILDER)
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    
+    ' Get Relationship Name and Meeting Frequency from the builder.
+    relName = Trim(wsB.Range("B2").Value)
+    If relName = "" Then
+        MsgBox "Please enter a Relationship Name in cell B2.", vbExclamation
+        Exit Sub
+    End If
+    freq = wsB.Range("B3").Value
+    If Not IsNumeric(freq) Then freq = 0
+    
+    ' Build a dictionary of account numbers from the Relationship_Builder.
+    Set dictBuilder = CreateObject("Scripting.Dictionary")
+    lastRowBuilder = wsB.Cells(wsB.Rows.Count, 1).End(xlUp).Row
+    For builderRow = 6 To lastRowBuilder
+        acctNum = Trim(wsB.Cells(builderRow, 1).Text)
+        If acctNum <> "" Then
+            dictBuilder(acctNum) = True
+        End If
+    Next builderRow
+    
+    ' --- Part 1: For each account in Master_Table currently assigned to this relationship,
+    ' clear the assignment if the account is not in the builder list.
+    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lrM
+        If Trim(wsM.Cells(i, 7).Value) = relName Then
+            acctNum = Trim(wsM.Cells(i, 1).Text)
+            If Not dictBuilder.Exists(acctNum) Then
+                wsM.Cells(i, 7).ClearContents   ' Clear Relationship Name
+                wsM.Cells(i, 11).ClearContents  ' Clear Meeting Frequency
+                wsM.Cells(i, 9).ClearContents   ' Clear Next Meeting Date
+            End If
+        End If
+    Next i
+    
+    ' --- Part 2: For each account in the builder list, update (or add) the relationship info.
+    For Each acctNum In dictBuilder.Keys
+        foundRow = FindAccountRow(wsM, acctNum)
+        If foundRow > 0 Then
+            ' Update existing row.
+            wsM.Cells(foundRow, 7).Value = relName
+            wsM.Cells(foundRow, 11).Value = freq
+            lastMeet = wsM.Cells(foundRow, 8).Value ' Last Meeting Date (col 8)
+            If freq > 0 Then
+                If IsDate(lastMeet) Then
+                    nextMeet = DateAdd("d", freq, lastMeet)
+                Else
+                    nextMeet = DateAdd("d", freq, Date)
+                End If
+                wsM.Cells(foundRow, 9).Value = nextMeet
+            Else
+                wsM.Cells(foundRow, 9).ClearContents
+            End If
+        Else
+            ' Optionally: If an account from the builder is not found in Master_Table,
+            ' you may choose to add it. For now, we skip such accounts.
+        End If
+    Next acctNum
+    
+    MsgBox "Relationship '" & relName & "' saved and Master_Table updated.", vbInformation
+End Sub
+ 
+'==============================================================================
+' 4) Dashboard Refresh (Optional)
+' This routine can be expanded to populate a Dashboard sheet with summaries.
+' For brevity, a basic example is provided.
+'==============================================================================
+Public Sub Refresh_Dashboard()
+    Dim wsD As Worksheet, wsM As Worksheet
+    Dim lrM As Long, i As Long, destRow As Long
+    
+    On Error Resume Next
+    Set wsD = ThisWorkbook.Worksheets("Dashboard")
+    On Error GoTo 0
+    If wsD Is Nothing Then Exit Sub
+    Set wsM = ThisWorkbook.Worksheets(SH_MASTER_TABLE)
+    
+    ' Clear previous dashboard data (customize as needed)
+    wsD.Cells.ClearContents
+    
+    ' Example: List top 10 accounts with overdue meetings (Next Meeting Date < Today)
+    destRow = 2
+    lrM = wsM.Cells(wsM.Rows.Count, 1).End(xlUp).Row
+    wsD.Cells(1, 1).Value = "Overdue Meetings (Relationship | Account# | Next Meeting)"
+    For i = 2 To lrM
+        If IsDate(wsM.Cells(i, 9).Value) Then
+            If wsM.Cells(i, 9).Value < Date Then
+                wsD.Cells(destRow, 1).Value = wsM.Cells(i, 7).Value & " | " & wsM.Cells(i, 1).Text & " | " & Format(wsM.Cells(i, 9).Value, "mm/dd/yyyy")
+                destRow = destRow + 1
+                If destRow > 11 Then Exit For
+            End If
+        End If
+    Next i
+    
+    MsgBox "Dashboard refreshed!", vbInformation
+End Sub
+ 
+'==============================================================================
+' 5) Helper Functions and Routines
+'==============================================================================
+ 
+' Helper: Finds the row in Master_Table for a given account number.
+' Returns 0 if not found.
+Public Function FindAccountRow(ws As Worksheet, acctNumber As String) As Long
+    Dim rngFound As Range
+    With ws.Columns(1)
+        Set rngFound = .Find(What:=acctNumber, LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+        If Not rngFound Is Nothing Then
+            FindAccountRow = rngFound.Row
+        Else
+            FindAccountRow = 0
+        End If
+    End With
+End Function
+ 
+' Helper: Get the column number in a worksheet based on a header in row 1.
+Public Function GetColumnByHeader(ws As Worksheet, hdrName As String) As Long
+    Dim rngFound As Range
+    Set rngFound = ws.Rows(1).Find(What:=hdrName, LookIn:=xlValues, LookAt:=xlWhole)
+    If rngFound Is Nothing Then
+        GetColumnByHeader = 0
+    Else
+        GetColumnByHeader = rngFound.Column
+    End If
+End Function
+ 
+' Helper: Remove duplicates from the current region based on a specified column.
+Public Sub RemoveDuplicates(ws As Worksheet, colIndex As Long)
+    Dim lr As Long
+    lr = ws.Cells(ws.Rows.Count, colIndex).End(xlUp).Row
+    If lr < 2 Then Exit Sub
+    ws.Range("A1").CurrentRegion.RemoveDuplicates Columns:=colIndex, Header:=xlYes
+End Sub
+ 
+' Helper: Apply conditional formatting to the Next Meeting Date column in Meeting_Calendar.
+Public Sub ApplyCalendarConditionalFormatting(ws As Worksheet, lastDataRow As Long)
+    If lastDataRow < 2 Then Exit Sub
+    Dim rngDates As Range
+    ' Assume Next Meeting Date is in column E
+    Set rngDates = ws.Range("E2:E" & lastDataRow)
+    rngDates.FormatConditions.Delete
+    
+    ' Overdue: Next Meeting < Today (Red)
+    With rngDates.FormatConditions.Add(Type:=xlCellValue, Operator:=xlLess, Formula1:="=TODAY()")
+        .Interior.Color = RGB(255, 0, 0)
+    End With
+    
+    ' Upcoming: Next Meeting between Today and Today+7 (Orange)
+    With rngDates.FormatConditions.Add(Type:=xlExpression, Formula1:="=AND(E2>=TODAY(),E2<=TODAY()+7)")
+        .Interior.Color = RGB(255, 165, 0)
+    End With
+    
+    ' Future: Next Meeting > Today+7 (Green)
+    With rngDates.FormatConditions.Add(Type:=xlExpression, Formula1:="=E2>TODAY()+7")
+        .Interior.Color = RGB(0, 255, 0)
+    End With
+End Sub

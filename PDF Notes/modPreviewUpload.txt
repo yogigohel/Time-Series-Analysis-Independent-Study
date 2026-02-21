@@ -1,0 +1,272 @@
+Option Explicit
+
+' ------------------------------
+' Global Constants for Sheet Names
+' ------------------------------
+Public Const SHEET_ACCOUNT_DATA As String = "Account Data"
+Public Const SHEET_CHANGE_LOG   As String = "Change Log"
+
+' ------------------------------
+' Column indices for "Account Data" (assumes fixed order in destination)
+' ------------------------------
+Public Enum AccountCols
+    colRelNum = 1         ' Column A
+    colRelName = 2        ' Column B
+    colMasterID = 3       ' Column C
+    colMasterName = 4     ' Column D
+    colAcctNum = 5        ' Column E
+    colAcctName = 6       ' Column F
+End Enum
+
+' ------------------------------
+' Utility: CleanStr – safely converts a value to a trimmed string.
+' ------------------------------
+Public Function CleanStr(ByVal v As Variant) As String
+    On Error Resume Next
+    If IsError(v) Or IsEmpty(v) Or IsNull(v) Then
+        CleanStr = ""
+    Else
+        CleanStr = Trim(CStr(v))
+    End If
+End Function
+
+' ------------------------------
+' LoadExistingStructure
+' Reads the "Account Data" sheet and builds three dictionaries:
+'  - dictRel: keys = Relationship#, value = Relationship Name
+'  - dictMaster: keys = Relationship# & "|" & Master Account ID, value = Master Account Name
+'  - dictAcct: keys = Relationship# & "|" & Master Account ID & "|" & Account#, value = Acct Name
+' ------------------------------
+Public Sub LoadExistingStructure(ByRef dictRel As Object, ByRef dictMaster As Object, ByRef dictAcct As Object)
+    Dim ws As Worksheet, lastRow As Long, r As Long
+    Set ws = ThisWorkbook.Worksheets(SHEET_ACCOUNT_DATA)
+    lastRow = ws.Cells(ws.Rows.Count, AccountCols.colRelNum).End(xlUp).Row
+    
+    Set dictRel = CreateObject("Scripting.Dictionary")
+    Set dictMaster = CreateObject("Scripting.Dictionary")
+    Set dictAcct = CreateObject("Scripting.Dictionary")
+    
+    Dim relNum As String, relName As String
+    Dim masterID As String, masterName As String
+    Dim acctNum As String, acctName As String, key As String
+    
+    For r = 2 To lastRow
+        relNum = CleanStr(ws.Cells(r, AccountCols.colRelNum).Value)
+        relName = CleanStr(ws.Cells(r, AccountCols.colRelName).Value)
+        masterID = CleanStr(ws.Cells(r, AccountCols.colMasterID).Value)
+        masterName = CleanStr(ws.Cells(r, AccountCols.colMasterName).Value)
+        acctNum = CleanStr(ws.Cells(r, AccountCols.colAcctNum).Value)
+        acctName = CleanStr(ws.Cells(r, AccountCols.colAcctName).Value)
+        
+        If relNum <> "" Then
+            If Not dictRel.Exists(relNum) Then
+                dictRel(relNum) = relName
+            End If
+            Dim masterKey As String
+            masterKey = relNum & "|" & masterID
+            If Not dictMaster.Exists(masterKey) Then
+                dictMaster(masterKey) = masterName
+            End If
+            key = relNum & "|" & masterID & "|" & acctNum
+            If Not dictAcct.Exists(key) Then
+                dictAcct(key) = acctName
+            End If
+        End If
+    Next r
+End Sub
+
+' ------------------------------
+' BuildUploadStructure
+' Reads the external file (whose path is provided) and builds a nested dictionary structure.
+'
+' The structure returned (uploadStruct) is a dictionary with keys = Relationship#
+' Each value is itself a dictionary with:
+'   "name"      -> Relationship Name (from the upload)
+'   "masters"   -> dictionary keyed by Master Account ID; each value is a dictionary with:
+'                   "name"    -> Master Account Name
+'                   "accounts"-> dictionary keyed by Account#; each value is an array: [Acct Name, isNew]
+'
+' isNew is a Boolean: True if the account does not exist in the destination.
+' ------------------------------
+Public Function BuildUploadStructure(ByVal filePath As String, _
+                                       ByVal dictExistingRel As Object, _
+                                       ByVal dictExistingMaster As Object, _
+                                       ByVal dictExistingAcct As Object) As Object
+    Dim wbSource As Workbook, wsSource As Worksheet
+    Dim lastRow As Long, lastCol As Long, r As Long, c As Long
+    Dim colMap As Object
+    Set colMap = CreateObject("Scripting.Dictionary")
+    colMap.CompareMode = vbTextCompare
+    
+    ' Define required headers (exact text, case-insensitive)
+    Dim reqHeaders As Variant
+    reqHeaders = Array("Relationship#", "Relationship Name", "Master Account ID", _
+                       "Master Account Name", "Account#", "Acct Name")
+    
+    ' Open external file
+    Set wbSource = Workbooks.Open(Filename:=filePath, ReadOnly:=True)
+    Set wsSource = wbSource.Sheets(1)
+    
+    lastCol = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
+    For c = 1 To lastCol
+        Dim hdr As String
+        hdr = CleanStr(wsSource.Cells(1, c).Value)
+        If hdr <> "" Then colMap(hdr) = c
+    Next c
+    
+    Dim h As Variant
+    For Each h In reqHeaders
+        If Not colMap.Exists(h) Then
+            wbSource.Close False
+            Err.Raise vbObjectError + 101, , "Missing required header: " & h
+        End If
+    Next h
+    
+    lastRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    
+    ' Build the hierarchical structure:
+    Dim uploadStruct As Object
+    Set uploadStruct = CreateObject("Scripting.Dictionary")
+    
+    Dim relNum As String, relName As String
+    Dim masterID As String, masterName As String
+    Dim acctNum As String, acctName As String
+    Dim keyAcct As String
+    
+    For r = 2 To lastRow
+        relNum = CleanStr(wsSource.Cells(r, colMap("Relationship#")).Value)
+        relName = CleanStr(wsSource.Cells(r, colMap("Relationship Name")).Value)
+        masterID = CleanStr(wsSource.Cells(r, colMap("Master Account ID")).Value)
+        masterName = CleanStr(wsSource.Cells(r, colMap("Master Account Name")).Value)
+        acctNum = CleanStr(wsSource.Cells(r, colMap("Account#")).Value)
+        acctName = CleanStr(wsSource.Cells(r, colMap("Acct Name")).Value)
+        
+        ' Determine if the account is new by checking the existing account dictionary:
+        keyAcct = relNum & "|" & masterID & "|" & acctNum
+        Dim isNew As Boolean
+        isNew = Not dictExistingAcct.Exists(keyAcct)
+        
+        ' If relationship does not exist in uploadStruct, add it.
+        Dim relNode As Object
+        If Not uploadStruct.Exists(relNum) Then
+            Set relNode = CreateObject("Scripting.Dictionary")
+            relNode("name") = relName
+            ' We'll add a flag "hasNew" later
+            relNode("masters") = CreateObject("Scripting.Dictionary")
+            uploadStruct(relNum) = relNode
+        Else
+            Set relNode = uploadStruct(relNum)
+        End If
+        
+        ' Process the master account within this relationship.
+        Dim masterKey As String
+        masterKey = masterID  ' within each relationship, masterID is unique
+        Dim masterNode As Object
+        Dim mastersDict As Object
+        Set mastersDict = relNode("masters")
+        If Not mastersDict.Exists(masterKey) Then
+            Set masterNode = CreateObject("Scripting.Dictionary")
+            masterNode("name") = masterName
+            masterNode("accounts") = CreateObject("Scripting.Dictionary")
+            mastersDict(masterKey) = masterNode
+        Else
+            Set masterNode = mastersDict(masterKey)
+        End If
+        
+        ' Process the account within this master account.
+        Dim accountsDict As Object
+        Set accountsDict = masterNode("accounts")
+        Dim arrAccount(1) As Variant ' [0]: Acct Name, [1]: isNew
+        arrAccount(0) = acctName
+        arrAccount(1) = isNew
+        accountsDict(acctNum) = arrAccount
+        
+        ' Mark parent nodes if any new account is found.
+        If isNew Then
+            masterNode("hasNew") = True
+            relNode("hasNew") = True
+        End If
+    Next r
+    
+    wbSource.Close False
+    Set BuildUploadStructure = uploadStruct
+End Function
+
+' ------------------------------
+' PopulateTreeView
+' Populates a TreeView control (tvw) with the hierarchical upload structure.
+' Colors:
+'   - Entirely new nodes (if relationship or master did not exist in destination) → Green.
+'   - Existing parent nodes that now have new child items → Yellow.
+'   - Child accounts that are new → Green.
+'
+' (Note: Standard TreeView nodes support the .ForeColor property.)
+' ------------------------------
+Public Sub PopulateTreeView(tvw As MSComctlLib.TreeView, ByVal uploadStruct As Object, _
+                              ByVal dictExistingRel As Object, ByVal dictExistingMaster As Object)
+    Dim nodeRel As MSComctlLib.Node, nodeMaster As MSComctlLib.Node, nodeAcct As MSComctlLib.Node
+    Dim relKey As Variant, masterKey As Variant, acctKey As Variant
+    Dim relNode As Object, masterNode As Object, accountsDict As Object
+    Dim arrAccount As Variant
+    
+    tvw.Nodes.Clear
+    tvw.ShowLines = True
+    tvw.ShowRoot = False
+    
+    For Each relKey In uploadStruct.Keys
+        Set relNode = uploadStruct(relKey)
+        Dim relText As String
+        relText = relKey & " - " & relNode("name")
+        
+        ' Determine relationship color:
+        Dim relColor As Long
+        ' If the relationship does NOT exist in destination, mark green; if exists but has new items, mark yellow.
+        If Not dictExistingRel.Exists(relKey) Then
+            relColor = vbGreen
+        ElseIf relNode.Exists("hasNew") Then
+            relColor = vbYellow
+        Else
+            relColor = vbBlack
+        End If
+        
+        Set nodeRel = tvw.Nodes.Add(, , "R" & relKey, relText)
+        nodeRel.ForeColor = relColor
+        
+        Dim mastersDict As Object
+        Set mastersDict = relNode("masters")
+        For Each masterKey In mastersDict.Keys
+            Set masterNode = mastersDict(masterKey)
+            Dim masterText As String
+            masterText = masterKey & " - " & masterNode("name")
+            Dim masterColor As Long
+            Dim compositeMasterKey As String
+            compositeMasterKey = relKey & "|" & masterKey
+            If Not dictExistingMaster.Exists(compositeMasterKey) Then
+                masterColor = vbGreen
+            ElseIf masterNode.Exists("hasNew") Then
+                masterColor = vbYellow
+            Else
+                masterColor = vbBlack
+            End If
+            
+            Set nodeMaster = tvw.Nodes.Add("R" & relKey, tvwChild, "M" & compositeMasterKey, masterText)
+            nodeMaster.ForeColor = masterColor
+            
+            Set accountsDict = masterNode("accounts")
+            Dim accKey As Variant
+            For Each accKey In accountsDict.Keys
+                arrAccount = accountsDict(accKey)
+                Dim accText As String
+                accText = accKey & " - " & arrAccount(0)
+                Dim accColor As Long
+                If arrAccount(1) = True Then
+                    accColor = vbGreen
+                Else
+                    accColor = vbBlack
+                End If
+                Set nodeAcct = tvw.Nodes.Add(nodeMaster.Key, tvwChild, "A" & relKey & "|" & masterKey & "|" & accKey, accText)
+                nodeAcct.ForeColor = accColor
+            Next accKey
+        Next masterKey
+    Next relKey
+End Sub

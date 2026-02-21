@@ -1,0 +1,327 @@
+'=============== modImport ===============
+Option Explicit
+'Imports external XLSX, loads tbl_Input, and syncs new Master rows into tbl_Groups
+
+Private Type tSourceColMap ' Renamed for clarity
+    idxAccount As Long
+    idxAcctName As Long
+    idxLastTraded As Long
+    idxInvSol As Long
+    idxMasterID As Long
+    idxMasterName As Long
+    idxIPSDate As Long
+End Type
+
+Private Type tTargetColMap ' To store target tbl_Input column indices
+    idxAccount As Long
+    idxAcctName As Long
+    idxLastTraded As Long
+    idxInvSol As Long
+    idxMasterID As Long
+    idxMasterName As Long
+    idxIPSDate As Long
+End Type
+
+
+Public Sub ImportData()
+    Dim fName As Variant
+    Dim wbSrc As Workbook, wsSrc As Worksheet
+    Dim wsTarget As Worksheet
+    Dim tgtTbl As ListObject
+    Dim hdrCol As Long, lastRow As Long, lastHdrCol As Long
+    Dim srcMap As tSourceColMap ' Map for source file columns
+    Dim targetMap As tTargetColMap ' Map for target table tbl_Input columns
+    Dim dictMasters As Object, loGroups As ListObject, grpRow As ListRow
+    Dim masterID As Variant
+    Dim iRow As Long
+    Dim cell As Range
+    Dim newRow As ListRow
+    Dim tempCell As Range ' For setting number format
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
+    On Error GoTo ErrorHandler_Import
+
+    '-- Get Target Sheet and Table upfront
+    On Error Resume Next ' Check if sheet exists
+    Set wsTarget = ThisWorkbook.Worksheets(SHEET_INPUT)
+    If wsTarget Is Nothing Then
+        MsgBox "Error: Target sheet '" & SHEET_INPUT & "' not found. Aborting import.", vbCritical
+        GoTo CleanExit
+    End If
+    On Error GoTo ErrorHandler_Import ' Reset error handling
+
+    On Error Resume Next ' Check if table exists
+    Set tgtTbl = wsTarget.ListObjects(TBL_INPUT)
+    If tgtTbl Is Nothing Then
+        MsgBox "Error: Target table '" & TBL_INPUT & "' not found on sheet '" & SHEET_INPUT & "'. Aborting import.", vbCritical
+        GoTo CleanExit
+    End If
+    On Error GoTo ErrorHandler_Import ' Reset error handling
+
+    '-- 1) Prompt & open source file ----------------------------------------
+    fName = Application.GetOpenFilename("Excel Files (*.xlsx),*.xlsx", , "Select PM Account File")
+    If fName = False Then GoTo CleanExit
+
+    Set wbSrc = Workbooks.Open(fName, ReadOnly:=True, UpdateLinks:=0)
+    Set wsSrc = wbSrc.Worksheets(1) ' Assuming data is always on the first sheet of the source
+
+    '-- 2) Map source headers by name ---------------------------------
+    If Application.WorksheetFunction.CountA(wsSrc.Rows(1)) = 0 Then
+        MsgBox "Header row in source file is empty. Aborting.", vbCritical
+        wbSrc.Close False
+        GoTo CleanExit
+    End If
+    lastHdrCol = wsSrc.Cells(1, wsSrc.Columns.Count).End(xlToLeft).Column
+
+    For hdrCol = 1 To lastHdrCol
+        Select Case Trim$(wsSrc.Cells(1, hdrCol).Value)
+            Case COL_ACCOUNT: srcMap.idxAccount = hdrCol
+            Case COL_ACCT_NAME: srcMap.idxAcctName = hdrCol
+            Case COL_DATE_LAST_TRADED: srcMap.idxLastTraded = hdrCol
+            Case COL_INV_SOLUTION: srcMap.idxInvSol = hdrCol
+            Case COL_MASTER_ID: srcMap.idxMasterID = hdrCol
+            Case COL_MASTER_NAME: srcMap.idxMasterName = hdrCol
+            Case COL_IPS_DATE: srcMap.idxIPSDate = hdrCol
+        End Select
+    Next hdrCol
+
+    If srcMap.idxAccount = 0 Or srcMap.idxMasterID = 0 Then
+        MsgBox "Required columns (Account# and/or Master Account ID) not found in source file headers; aborting.", vbCritical
+        wbSrc.Close False
+        GoTo CleanExit
+    End If
+
+    '-- 3) Map TARGET tbl_Input column indices by CONSTANT names -----
+    ' This is crucial to prevent "Subscript out of range" when writing to tgtTbl
+    On Error Resume Next ' Temporarily disable error handling for column checking
+    targetMap.idxAccount = tgtTbl.ListColumns(COL_ACCOUNT).Index
+    targetMap.idxAcctName = tgtTbl.ListColumns(COL_ACCT_NAME).Index
+    targetMap.idxLastTraded = tgtTbl.ListColumns(COL_DATE_LAST_TRADED).Index
+    targetMap.idxInvSol = tgtTbl.ListColumns(COL_INV_SOLUTION).Index
+    targetMap.idxMasterID = tgtTbl.ListColumns(COL_MASTER_ID).Index
+    targetMap.idxMasterName = tgtTbl.ListColumns(COL_MASTER_NAME).Index
+    targetMap.idxIPSDate = tgtTbl.ListColumns(COL_IPS_DATE).Index
+    On Error GoTo ErrorHandler_Import ' Re-enable standard error handling
+
+    ' Validate that critical target columns were found
+    If targetMap.idxAccount = 0 Then MsgBox "Target table '" & TBL_INPUT & "' is missing column: '" & COL_ACCOUNT & "'.", vbCritical: GoTo ErrorHandler_Import_Cleanup_SrcWb
+    If targetMap.idxAcctName = 0 Then MsgBox "Target table '" & TBL_INPUT & "' is missing column: '" & COL_ACCT_NAME & "'.", vbCritical: GoTo ErrorHandler_Import_Cleanup_SrcWb
+    If targetMap.idxLastTraded = 0 Then MsgBox "Target table '" & TBL_INPUT & "' is missing column: '" & COL_DATE_LAST_TRADED & "'.", vbCritical: GoTo ErrorHandler_Import_Cleanup_SrcWb
+    If targetMap.idxInvSol = 0 Then MsgBox "Target table '" & TBL_INPUT & "' is missing column: '" & COL_INV_SOLUTION & "'.", vbCritical: GoTo ErrorHandler_Import_Cleanup_SrcWb
+    If targetMap.idxMasterID = 0 Then MsgBox "Target table '" & TBL_INPUT & "' is missing column: '" & COL_MASTER_ID & "'.", vbCritical: GoTo ErrorHandler_Import_Cleanup_SrcWb
+    If targetMap.idxMasterName = 0 Then MsgBox "Target table '" & TBL_INPUT & "' is missing column: '" & COL_MASTER_NAME & "'.", vbCritical: GoTo ErrorHandler_Import_Cleanup_SrcWb
+    If targetMap.idxIPSDate = 0 Then MsgBox "Target table '" & TBL_INPUT & "' is missing column: '" & COL_IPS_DATE & "'.", vbCritical: GoTo ErrorHandler_Import_Cleanup_SrcWb
+    ' Add more checks for other optional columns if they are critical, or handle their absence gracefully when writing
+
+    '-- 4) Clear existing data from tbl_Input and load new data --------
+    Application.DisplayAlerts = False
+    If Not tgtTbl.DataBodyRange Is Nothing Then
+        tgtTbl.DataBodyRange.Delete
+    End If
+    Application.DisplayAlerts = True
+
+    If srcMap.idxAccount > 0 Then
+         lastRow = wsSrc.Cells(wsSrc.Rows.Count, srcMap.idxAccount).End(xlUp).Row
+         If lastRow = 1 And IsEmpty(wsSrc.Cells(1, srcMap.idxAccount).Value) Then lastRow = 0
+    Else
+        ' This case should have been caught earlier by "Required columns...not found in source"
+        MsgBox "Account# column index not found in source, cannot determine source data range.", vbExclamation
+        wbSrc.Close False
+        GoTo CleanExit
+    End If
+
+    If lastRow > 1 Then ' Check if there is data beyond headers
+        For iRow = 2 To lastRow ' Assuming headers are in row 1 of source
+            Set newRow = tgtTbl.ListRows.Add
+            With newRow
+                ' Write data using the PRE-VALIDATED targetMap indices
+                ' For Account# and MasterAccountID, set NumberFormat to Text ("@") to preserve leading zeros
+                If srcMap.idxAccount > 0 And targetMap.idxAccount > 0 Then
+                    Set tempCell = .Range(targetMap.idxAccount)
+                    tempCell.NumberFormat = "@"
+                    tempCell.Value = wsSrc.Cells(iRow, srcMap.idxAccount).Text
+                End If
+                
+                If srcMap.idxAcctName > 0 And targetMap.idxAcctName > 0 Then
+                     .Range(targetMap.idxAcctName).Value = wsSrc.Cells(iRow, srcMap.idxAcctName).Value
+                End If
+                
+                If srcMap.idxLastTraded > 0 And targetMap.idxLastTraded > 0 Then
+                    .Range(targetMap.idxLastTraded).Value = SafeDate(wsSrc.Cells(iRow, srcMap.idxLastTraded).Value2)
+                End If
+                
+                If srcMap.idxInvSol > 0 And targetMap.idxInvSol > 0 Then
+                    .Range(targetMap.idxInvSol).Value = wsSrc.Cells(iRow, srcMap.idxInvSol).Value
+                End If
+                
+                If srcMap.idxMasterID > 0 And targetMap.idxMasterID > 0 Then
+                    Set tempCell = .Range(targetMap.idxMasterID)
+                    tempCell.NumberFormat = "@"
+                    tempCell.Value = wsSrc.Cells(iRow, srcMap.idxMasterID).Text
+                End If
+                
+                If srcMap.idxMasterName > 0 And targetMap.idxMasterName > 0 Then
+                    .Range(targetMap.idxMasterName).Value = wsSrc.Cells(iRow, srcMap.idxMasterName).Value
+                End If
+                
+                If srcMap.idxIPSDate > 0 And targetMap.idxIPSDate > 0 Then
+                     .Range(targetMap.idxIPSDate).Value = SafeDate(wsSrc.Cells(iRow, srcMap.idxIPSDate).Value2)
+                End If
+            End With
+        Next iRow
+    End If
+    
+    wbSrc.Close False
+    Set wbSrc = Nothing ' Release object
+
+    '-- 5) Sync masters into tbl_Groups -------------------------
+    Set dictMasters = CreateObject("Scripting.Dictionary")
+    
+    If Not tgtTbl.ListColumns(COL_MASTER_ID).DataBodyRange Is Nothing Then ' COL_MASTER_ID existence in tgtTbl already validated
+        For Each cell In tgtTbl.ListColumns(COL_MASTER_ID).DataBodyRange
+            If Len(cell.Value) > 0 Then dictMasters(CStr(cell.Value)) = True
+        Next cell
+    End If
+    
+    Set loGroups = ThisWorkbook.Worksheets(SHEET_GROUPS).ListObjects(TBL_GROUPS)
+    If loGroups Is Nothing Then
+        MsgBox "Error: Groups table '" & TBL_GROUPS & "' not found on sheet '" & SHEET_GROUPS & "'. Cannot sync masters.", vbCritical
+        GoTo CleanExit ' Or handle more gracefully if this part is optional
+    End If
+
+    Dim groupIDColIndexInGroups As Long, groupTypeColIndexInGroups As Long
+    Dim groupNameColIndexInGroups As Long, tradeIntColIndexInGroups As Long, meetIntColIndexInGroups As Long
+
+    On Error Resume Next ' Check for tbl_Groups columns
+    groupIDColIndexInGroups = loGroups.ListColumns(COL_GROUP_ID).Index
+    groupTypeColIndexInGroups = loGroups.ListColumns(COL_GROUP_TYPE).Index
+    groupNameColIndexInGroups = loGroups.ListColumns(COL_GROUP_NAME).Index
+    tradeIntColIndexInGroups = loGroups.ListColumns(COL_TRADE_INT).Index
+    meetIntColIndexInGroups = loGroups.ListColumns(COL_MEET_INT).Index
+    On Error GoTo ErrorHandler_Import
+
+    If groupIDColIndexInGroups = 0 Then MsgBox "Groups table missing '" & COL_GROUP_ID & "' column.", vbCritical: GoTo CleanExit
+    If groupTypeColIndexInGroups = 0 Then MsgBox "Groups table missing '" & COL_GROUP_TYPE & "' column.", vbCritical: GoTo CleanExit
+    If groupNameColIndexInGroups = 0 Then MsgBox "Groups table missing '" & COL_GROUP_NAME & "' column.", vbCritical: GoTo CleanExit
+    If tradeIntColIndexInGroups = 0 Then MsgBox "Groups table missing '" & COL_TRADE_INT & "' column.", vbCritical: GoTo CleanExit
+    If meetIntColIndexInGroups = 0 Then MsgBox "Groups table missing '" & COL_MEET_INT & "' column.", vbCritical: GoTo CleanExit
+
+
+    For Each masterID In dictMasters.Keys
+        Dim foundCell As Range
+        If Not loGroups.DataBodyRange Is Nothing Then
+            Set foundCell = loGroups.ListColumns(groupIDColIndexInGroups).DataBodyRange.Find( _
+                What:=CStr(masterID), LookIn:=xlValues, LookAt:=xlWhole)
+        Else
+            Set foundCell = Nothing
+        End If
+
+        If foundCell Is Nothing Then
+            Set grpRow = loGroups.ListRows.Add
+            With grpRow
+                .Range(groupTypeColIndexInGroups).Value = "Master"
+                .Range(groupIDColIndexInGroups).Value = masterID
+                .Range(groupNameColIndexInGroups).Value = GetMasterName(tgtTbl, masterID) ' tgtTbl and its columns are validated
+                .Range(tradeIntColIndexInGroups).Value = IIf(HasDesktopManaged(tgtTbl, masterID), 60, 0)
+                .Range(meetIntColIndexInGroups).Value = 180
+            End With
+        End If
+    Next masterID
+    
+    MsgBox "Import complete. " & IIf(Not tgtTbl.DataBodyRange Is Nothing, tgtTbl.ListRows.Count, 0) & " rows imported. Click 'Refresh Schedules' next.", vbInformation
+    GoTo CleanExit
+
+ErrorHandler_Import_Cleanup_SrcWb: ' Special handler to ensure source workbook is closed if error occurs after opening it
+    If Not wbSrc Is Nothing Then wbSrc.Close False
+    ' Fall through to ErrorHandler_Import
+ErrorHandler_Import:
+    MsgBox "An error occurred during import: " & Err.Description, vbCritical
+    If Not wbSrc Is Nothing Then wbSrc.Close False ' Ensure source is closed on any error
+
+CleanExit:
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Set wbSrc = Nothing
+    Set wsSrc = Nothing
+    Set wsTarget = Nothing
+    Set tgtTbl = Nothing
+    Set dictMasters = Nothing
+    Set loGroups = Nothing
+    Set grpRow = Nothing
+    Set newRow = Nothing
+    Set tempCell = Nothing
+End Sub
+
+Public Function SafeDate(v As Variant) As Variant
+    If IsNumeric(v) Then
+        If CDbl(v) > 0 Then
+            On Error Resume Next
+            SafeDate = CDate(CDbl(v))
+            If Err.Number <> 0 Then SafeDate = Empty
+            On Error GoTo 0
+        Else
+            SafeDate = Empty
+        End If
+    ElseIf IsDate(v) Then
+        SafeDate = CDate(v)
+    Else
+        SafeDate = Empty
+    End If
+End Function
+
+Private Function GetMasterName(loInputTbl As ListObject, masterIDVal As Variant) As String
+    Dim f As Range
+    Dim masterIDColIdx As Long, masterNameColIdx As Long
+
+    GetMasterName = "Name N/A" ' Default
+    If loInputTbl.DataBodyRange Is Nothing Then Exit Function
+
+    On Error Resume Next ' Check for column existence
+    masterIDColIdx = loInputTbl.ListColumns(COL_MASTER_ID).Index
+    masterNameColIdx = loInputTbl.ListColumns(COL_MASTER_NAME).Index
+    On Error GoTo 0 ' Reset error handling (or to a local error handler for this function)
+
+    If masterIDColIdx = 0 Or masterNameColIdx = 0 Then
+        ' MsgBox "GetMasterName: Critical columns missing in input table.", vbExclamation ' Optional: more verbose error
+        Exit Function
+    End If
+    
+    Set f = loInputTbl.ListColumns(masterIDColIdx).DataBodyRange.Find( _
+                What:=CStr(masterIDVal), LookIn:=xlValues, LookAt:=xlWhole)
+    
+    If Not f Is Nothing Then
+        GetMasterName = f.EntireRow.Cells(masterNameColIdx).Value
+    End If
+End Function
+
+Private Function HasDesktopManaged(loInputTbl As ListObject, masterIDVal As Variant) As Boolean
+    Dim r As ListRow
+    Dim masterIDColIdx As Long, invSolColIdx As Long
+
+    HasDesktopManaged = False ' Default
+    If loInputTbl.DataBodyRange Is Nothing Then Exit Function
+
+    On Error Resume Next ' Check for column existence
+    masterIDColIdx = loInputTbl.ListColumns(COL_MASTER_ID).Index
+    invSolColIdx = loInputTbl.ListColumns(COL_INV_SOLUTION).Index
+    On Error GoTo 0 ' Reset error handling
+
+    If masterIDColIdx = 0 Or invSolColIdx = 0 Then
+        ' MsgBox "HasDesktopManaged: Critical columns missing in input table.", vbExclamation ' Optional
+        Exit Function
+    End If
+
+    For Each r In loInputTbl.ListRows
+        If r.Range(masterIDColIdx).Value = CStr(masterIDVal) _
+           And r.Range(invSolColIdx).Value = "DESKTOP MANAGED" Then
+            HasDesktopManaged = True
+            Exit Function
+        End If
+    Next r
+End Function
+
+

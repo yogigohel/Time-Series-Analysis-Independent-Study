@@ -1,0 +1,45 @@
+'=============== modConstants ===============
+Option Explicit
+
+'==== Workbook-wide constants ====
+Public Const SHEET_CONTROL As String = "Control"
+Public Const SHEET_INPUT As String = "Input_Data"
+Public Const SHEET_GROUPS As String = "Groups"
+Public Const SHEET_OVERRIDES As String = "Overrides"
+Public Const SHEET_SCHEDULES As String = "Schedules"
+Public Const SHEET_DASHBOARD As String = "Dashboard"
+
+Public Const TBL_INPUT As String = "tbl_Input"
+Public Const TBL_GROUPS As String = "tbl_Groups"
+Public Const TBL_OVERRIDES As String = "tbl_Overrides"
+Public Const TBL_SCHEDULES As String = "tbl_Schedules"
+
+'--- Column names for tbl_Input (Source and Target) ---
+Public Const COL_ACCOUNT As String = "Account#" ' Universal
+Public Const COL_ACCT_NAME As String = "Acct Name"
+Public Const COL_DATE_LAST_TRADED As String = "Date Last Traded"
+Public Const COL_INV_SOLUTION As String = "Investment Solution Desc"
+Public Const COL_MASTER_ID As String = "Master Account ID"
+Public Const COL_MASTER_NAME As String = "Master Account Name"
+Public Const COL_IPS_DATE As String = "IPS ReAffirmation Date"
+
+'--- Column names for tbl_Groups ---
+Public Const COL_GROUP_TYPE As String = "GroupType"
+Public Const COL_GROUP_ID As String = "GroupID" ' Also used in tbl_Schedules
+Public Const COL_GROUP_NAME As String = "GroupName"
+Public Const COL_TRADE_INT As String = "TradeIntervalDays"
+Public Const COL_MEET_INT As String = "MeetingIntervalDays"
+Public Const COL_NEXT_TRADE As String = "NextTradeDate" ' Also used in tbl_Schedules
+Public Const COL_NEXT_MEET As String = "NextMeetingDate" ' Also used in tbl_Schedules
+Public Const COL_MEMBER_ACCTS As String = "MemberAccounts" ' For custom groups, comma-separated Account#
+
+'--- Column names for tbl_Overrides ---
+' COL_ACCOUNT is already defined
+Public Const COL_OVERRIDE_LAST_TRADED As String = "OverrideDateLastTraded"
+Public Const COL_OVERRIDE_IPS_DATE As String = "OverrideIPSReaffirmDate"
+
+'--- Column names for tbl_Schedules ---
+' COL_ACCOUNT, COL_ACCT_NAME, COL_GROUP_ID, COL_GROUP_NAME, COL_MASTER_ID, COL_MASTER_NAME,
+' COL_NEXT_TRADE, COL_NEXT_MEET are defined above.
+Public Const COL_EFF_LAST_TRADED As String = "EffectiveDateLastTraded"
+Public Const COL_EFF_IPS_REAFFIRM As String = "EffectiveIPSReaffirmDate"

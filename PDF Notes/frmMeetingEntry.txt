@@ -1,0 +1,173 @@
+Option Explicit
+
+Private Sub UserForm_Initialize()
+    ' Populate entity type options manually.
+    With cboEntityType
+        .Clear
+        .AddItem "Account"
+        .AddItem "Master Account"
+        .AddItem "Relationship"
+        .ListIndex = 0
+    End With
+    PopulateEntityList
+    dtpMeetingDate.Value = Date
+    txtNotes.Value = ""
+End Sub
+
+Private Sub cboEntityType_Change()
+    PopulateEntityList
+End Sub
+
+Private Sub PopulateEntityList()
+    Dim wsAcc As Worksheet, loAcc As ListObject, wsRel As Worksheet, loRel As ListObject
+    Dim i As Long
+    lstEntities.Clear
+    Select Case cboEntityType.Value
+        Case "Account"
+            Set wsAcc = ThisWorkbook.Sheets("Accounts")
+            Set loAcc = wsAcc.ListObjects("tblAccounts")
+            For i = 1 To loAcc.ListRows.Count
+                Dim acctID As Variant, acctName As String
+                acctID = loAcc.ListRows(i).Range.Cells(1, 3).Value
+                acctName = loAcc.ListRows(i).Range.Cells(1, 4).Value
+                lstEntities.AddItem acctID & " - " & acctName
+            Next i
+        Case "Master Account"
+            Set wsAcc = ThisWorkbook.Sheets("Accounts")
+            Set loAcc = wsAcc.ListObjects("tblAccounts")
+            Dim dictMaster As Object: Set dictMaster = CreateObject("Scripting.Dictionary")
+            For i = 1 To loAcc.ListRows.Count
+                Dim masterID As Variant, masterName As String
+                masterID = loAcc.ListRows(i).Range.Cells(1, 1).Value
+                masterName = loAcc.ListRows(i).Range.Cells(1, 2).Value
+                If Not dictMaster.Exists(masterID) Then
+                    dictMaster.Add masterID, masterName
+                    lstEntities.AddItem masterID & " - " & masterName
+                End If
+            Next i
+        Case "Relationship"
+            Set wsRel = ThisWorkbook.Sheets("Relationships")
+            Set loRel = wsRel.ListObjects("tblRelationships")
+            Dim dictRel As Object: Set dictRel = CreateObject("Scripting.Dictionary")
+            For i = 1 To loRel.ListRows.Count
+                Dim relName As String
+                relName = loRel.ListRows(i).Range.Cells(1, 2).Value
+                If relName <> "" And Not dictRel.Exists(relName) Then
+                    dictRel.Add relName, True
+                    lstEntities.AddItem relName
+                End If
+            Next i
+    End Select
+End Sub
+
+Private Sub cmdSave_Click()
+    On Error GoTo ErrorHandler
+    Dim meetingDate As Date: meetingDate = dtpMeetingDate.Value
+    Dim notes As String: notes = txtNotes.Value
+    Dim wsMeet As Worksheet, loMeet As ListObject
+    Set wsMeet = ThisWorkbook.Sheets("Meetings")
+    Set loMeet = wsMeet.ListObjects("tblMeetings")
+    
+    Dim entityType As String: entityType = cboEntityType.Value
+    Dim i As Long, selectedItems As Collection: Set selectedItems = New Collection
+    For i = 0 To lstEntities.ListCount - 1
+        If lstEntities.Selected(i) Then
+            selectedItems.Add lstEntities.List(i)
+        End If
+    Next i
+    If selectedItems.Count = 0 Then
+        MsgBox "Please select at least one entity.", vbExclamation
+        Exit Sub
+    End If
+    
+    Dim acctIDs As Collection: Set acctIDs = New Collection
+    Dim parts() As String, iItem As Long
+    Select Case entityType
+        Case "Account"
+            For iItem = 1 To selectedItems.Count
+                parts = Split(selectedItems(iItem), " - ")
+                acctIDs.Add parts(0)
+            Next iItem
+        Case "Master Account"
+            Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
+            Set wsAcc = ThisWorkbook.Sheets("Accounts")
+            Set loAcc = wsAcc.ListObjects("tblAccounts")
+            For iItem = 1 To selectedItems.Count
+                parts = Split(selectedItems(iItem), " - ")
+                Dim masterID As String: masterID = parts(0)
+                For Each lr In loAcc.ListRows
+                    If lr.Range.Cells(1, 1).Value = masterID Then
+                        On Error Resume Next
+                        acctIDs.Add lr.Range.Cells(1, 3).Value, CStr(lr.Range.Cells(1, 3).Value)
+                        On Error GoTo 0
+                    End If
+                Next lr
+            Next iItem
+        Case "Relationship"
+            Dim wsAcc2 As Worksheet, loAcc2 As ListObject, lr2 As ListRow
+            Set wsAcc2 = ThisWorkbook.Sheets("Accounts")
+            Set loAcc2 = wsAcc2.ListObjects("tblAccounts")
+            For iItem = 1 To selectedItems.Count
+                Dim relName As String: relName = selectedItems(iItem)
+                For Each lr2 In loAcc2.ListRows
+                    If lr2.Range.Cells(1, 9).Value = relName Then
+                        On Error Resume Next
+                        acctIDs.Add lr2.Range.Cells(1, 3).Value, CStr(lr2.Range.Cells(1, 3).Value)
+                        On Error GoTo 0
+                    End If
+                Next lr2
+            Next iItem
+    End Select
+    
+    Dim newRow As ListRow, acctID As Variant
+    For i = 1 To acctIDs.Count
+        acctID = acctIDs(i)
+        Set newRow = loMeet.ListRows.Add
+        With newRow.Range
+            .Cells(1, 1).Value = meetingDate
+            .Cells(1, 2).Value = entityType
+            .Cells(1, 3).Value = acctID
+            .Cells(1, 4).Value = GetEntityNameForMeeting(entityType, acctID)
+            .Cells(1, 5).Value = notes
+            .Cells(1, 6).Value = meetingDate + GetReviewDaysForMeeting(entityType, acctID)
+        End With
+    Next i
+    
+    MsgBox "Meeting logged successfully for " & acctIDs.Count & " accounts.", vbInformation
+    Unload Me
+    Exit Sub
+ErrorHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbCritical
+End Sub
+
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
+
+' Helper functions for meeting entry.
+Public Function GetEntityNameForMeeting(entityType As String, acctID As String) As String
+    Dim wsAcc As Worksheet, loAcc As ListObject, lr As ListRow
+    Set wsAcc = ThisWorkbook.Sheets("Accounts")
+    Set loAcc = wsAcc.ListObjects("tblAccounts")
+    For Each lr In loAcc.ListRows
+        If lr.Range.Cells(1, 3).Value = acctID Then
+            Select Case LCase(entityType)
+                Case "account": GetEntityNameForMeeting = lr.Range.Cells(1, 4).Value
+                Case "master account": GetEntityNameForMeeting = lr.Range.Cells(1, 2).Value
+                Case "relationship": GetEntityNameForMeeting = lr.Range.Cells(1, 9).Value
+                Case Else: GetEntityNameForMeeting = "Unknown"
+            End Select
+            Exit Function
+        End If
+    Next lr
+    GetEntityNameForMeeting = ""
+End Function
+
+Public Function GetReviewDaysForMeeting(entityType As String, acctID As String) As Long
+    Select Case LCase(entityType)
+        Case "account": GetReviewDaysForMeeting = 30
+        Case "master account": GetReviewDaysForMeeting = 60
+        Case "relationship": GetReviewDaysForMeeting = 90
+        Case Else: GetReviewDaysForMeeting = 30
+    End Select
+End Function
